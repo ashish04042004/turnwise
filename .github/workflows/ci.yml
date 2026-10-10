@@ -68,3 +68,18 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build production image
         run: docker build -t turnwise-app .
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [check, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency: render-deploy
+    steps:
+      - name: Deploy to Render
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK" ]; then echo "RENDER_DEPLOY_HOOK not set; skipping deploy"; exit 0; fi
+          curl -fsS -X POST "$RENDER_DEPLOY_HOOK" -o /dev/null
+          echo "Render deploy triggered for ${GITHUB_SHA::7}"
