@@ -77,7 +77,8 @@ export default function BaselinePanel() {
       <p className="muted small">
         Replays today’s patients (same arrival times, same tests, same simulated service durations) through two policies. Department queues: each patient takes
         tests in a fixed order and waits first-come-first-served at each one, as with paper tokens. Turnwise: appointments are reserved ahead, walk-ins are planned
-        on arrival, and staff start the earliest-booked patient who is present, swapping in an identical free machine or room when the booked one is busy.
+        on arrival, and staff follow “Next up”: among patients who are present and whose booked resource (or an identical one) is free, call whoever was due
+        longest ago, by appointment time for bookings and arrival time for walk-ins.
         It is a model, not a trial; lower is better throughout.
       </p>
     </section>

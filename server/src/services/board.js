@@ -1,4 +1,6 @@
+import { config } from '../config.js';
 import { notFound, pool } from '../db.js';
+import { suggestNextUp } from '../domain/dispatch.js';
 import { waitRange } from '../domain/projection.js';
 import { getCentre, loadSnapshot, STEP_SELECT } from './context.js';
 import { estimateErrorP80, loadDurationStats, projectSnapshot } from './projections.js';
@@ -125,6 +127,57 @@ function shapeVisit(day, v) {
   };
 }
 
+/** Steps that could start now: patient present and free, earlier tests done, required gap elapsed. */
+function nextUp(snap) {
+  const now = snap.clock.now;
+  const g = config.slotGranularityMin * 60_000;
+  const t = (d) => d?.getTime();
+  const inService = new Set(snap.steps.filter((s) => s.status === 'in_service').map((s) => s.visit_id));
+
+  const ready = (s) =>
+    (snap.prereqs.get(s.service_id) ?? []).every((p) => {
+      const dep = snap.steps.find((x) => x.visit_id === s.visit_id && x.service_id === p.requires_service_id);
+      if (!dep) return true;
+      return dep.status === 'completed' && t(dep.actual_end) + p.min_gap_min * 60_000 <= now;
+    });
+
+  const candidates = snap.steps
+    .filter((s) => s.status === 'scheduled' && ['arrived', 'in_progress'].includes(s.visit_status) && !inService.has(s.visit_id) && ready(s))
+    .map((s) => {
+      const svc = snap.services.get(s.service_id);
+      return {
+        stepId: s.id,
+        visitId: s.visit_id,
+        patient: s.patient_name,
+        service: svc.code,
+        requirements: svc.requirements,
+        durationMs: t(s.planned_end) - t(s.planned_start),
+        reservedResourceIds: snap.stepResources.get(s.id) ?? [],
+        dueAt: t(s.visit_kind === 'appointment' ? s.scheduled_at ?? s.arrived_at : s.arrived_at ?? s.scheduled_at),
+        plannedStart: t(s.planned_start),
+        kind: s.visit_kind,
+        ownBusy: snap.steps
+          .filter((o) => o.visit_id === s.visit_id && o.id !== s.id && o.status === 'scheduled' && o.planned_start)
+          .map((o) => ({ start: t(o.planned_start), end: t(o.planned_end), stepId: o.id })),
+      };
+    })
+    .filter((c) => c.durationMs > 0 && c.reservedResourceIds.length > 0);
+
+  const busy = new Map();
+  for (const r of snap.reservations) {
+    const end = r.status === 'in_use' ? Math.max(t(r.end), now + g) : t(r.end);
+    const hard = r.kind === 'downtime' || r.status !== 'confirmed';
+    busy.set(r.resource_id, [...(busy.get(r.resource_id) ?? []), { start: t(r.start), end, stepId: r.step_id, hard }]);
+  }
+
+  const names = new Map(snap.resources.map((r) => [r.id, r.name]));
+  return suggestNextUp({ now, resources: snap.resources, busy, candidates }).map((s) => ({
+    ...s,
+    dueAt: new Date(s.dueAt).toISOString(),
+    resources: s.resourceIds.map((id) => names.get(id)),
+  }));
+}
+
 export async function getBoard(centreId) {
   const centre = await getCentre(pool, centreId);
   const day = await loadDay(centre);
@@ -199,6 +252,7 @@ export async function getBoard(centreId) {
     resources,
     timeline,
     visits,
+    nextUp: nextUp(snap),
     proposal: day.proposal && {
       id: day.proposal.id,
       trigger: day.proposal.trigger,

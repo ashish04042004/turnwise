@@ -42,13 +42,13 @@ async function occupy(tx, centre, step, start, end, { protectBefore = null, forc
         [rids, start, end, step.id],
       )
     ).rows;
-  const blocks = (c) => c.kind === 'downtime' || c.status === 'in_use' || (!force && protectBefore && c.start < protectBefore);
 
   let clashes = await findClashes();
   let swapped = null;
-  const blocked = new Set(clashes.filter(blocks).map((c) => c.resource_id));
-  if (rebind && blocked.size > 0) {
-    swapped = await rebindResources(tx, centre, step, rids, blocked, start, end);
+  // Swapping to an identical free resource beats both waiting and bumping a later booking.
+  const clashing = new Set(clashes.map((c) => c.resource_id));
+  if (rebind && clashing.size > 0) {
+    swapped = await rebindResources(tx, centre, step, rids, clashing, start, end);
     if (swapped) {
       rids = swapped.resourceIds;
       clashes = await findClashes();

@@ -17,7 +17,8 @@ Stack: **PERN in plain JavaScript**. That is PostgreSQL, Express 5, React (Vite)
 | Holds | Receptionists get a short hold while the patient confirms. Expired holds release capacity automatically. |
 | Live estimates | Delays propagate through each resource's queue. Waits are shown as a range calibrated by the centre's own recent estimate error. |
 | Disruptions | Downtime, overruns and late starts displace only the bookings they actually break. A re-plan proposal offers options ("move only affected patients" vs "keep queue order") with their cost in delay. Nothing changes until staff apply it, and it is re-validated against live capacity at that moment. |
-| Late resource binding | When staff start a service and the booked machine, room or person is busy (an overrun, an outage), Turnwise swaps in an interchangeable one that is free for the whole service instead of making the patient wait. |
+| Late resource binding | When staff start a service and the booked machine, room or person is busy (an overrun, an outage) or booked for someone else, Turnwise swaps in an interchangeable one that is free for the whole service instead of making the patient wait or bumping the other booking. |
+| Next up | The floor shows who to call now: patients who are present and whose test can start immediately, ordered by when they were due (appointment time, or arrival for walk-ins). An early-arriving appointment doesn't overtake a walk-in who is already waiting. Suggestions never take a resource that is down, in use or booked for someone due earlier; if a later booking would have to move, the card says so. |
 | Baseline comparison | Analytics replays today's demand through a paper-token "department queue" system with identical service durations, so the effect of the policy is measured, not asserted. |
 | Capacity recovery | Cancellations and no-shows release capacity. A worker offers the slot to a compatible waitlisted patient with a time-limited link. |
 | Patient view | A token link shows the next test, a wait range and any pending offer. It updates live. |
@@ -135,22 +136,25 @@ These latencies are dominated by queueing behind the per-centre planning lock un
 
 ### Turnwise vs department queues
 
-`GET /api/analytics/baseline` (and the top panel on Analytics) replays today's patients through two policies with identical arrivals, tests and service durations (8 seeded duration draws). Waiting excludes clinically required gaps, such as 120 min between fasting and post-prandial sugar. On the seeded day (124 visits):
+`GET /api/analytics/baseline` (and the top panel on Analytics) replays today's patients through two policies with identical arrivals, tests and service durations (8 seeded duration draws). Waiting excludes clinically required gaps, such as 120 min between fasting and post-prandial sugar. On a seeded demo day partway through (138 visits):
 
 | Metric (lower is better) | Department queues | Turnwise |
 | --- | --- | --- |
-| Median wait, everyone | 4.8 min | 2.3 min |
-| 90th percentile wait, everyone | 29.8 min | 22.5 min |
-| 90th percentile wait, appointments | 28.8 min | 17.2 min |
-| 90th percentile wait, walk-ins | 30.5 min | **46.8 min** |
-| Patients waiting over 30 min | 9.8% | 6.4% |
+| Median wait, everyone | 8.3 min | 4.7 min |
+| 90th percentile wait, everyone | 36.0 min | 32.5 min |
+| 90th percentile wait, appointments | 37.7 min | 33.8 min |
+| 90th percentile wait, walk-ins | 28.2 min | 26.6 min |
+| 90th percentile time in centre | 79.7 min | 65.4 min |
+| Patients waiting over 30 min | 14.9% | 10.9% |
+| Overtime after closing | 18.1 min | **26.4 min** |
 
-Two findings came out of building this:
+Three findings came out of building this:
 
-- **Rigid timetables lose.** The first version, which made staff follow the plan to the minute, was *worse* than paper tokens. The gain comes from using the plan as a priority order while staff start whoever is present and ready.
-- **Late binding is the biggest lever.** Without it, Turnwise's median wait is 6.6 vs 4.8 min (better in only 2 of 8 draws). With it, the median is 2.3 vs 4.8 min, and Turnwise is better in all 8 draws. That result is why late binding is in the product, not just the model.
+- **Rigid timetables lose.** The first version, which made staff follow the plan to the minute, was *worse* than paper tokens. The gain comes from treating the plan as a reservation while staff start whoever is present and ready.
+- **Late binding is the biggest lever.** Without it, Turnwise lost to paper tokens on median wait in 6 of 8 draws. With it, Turnwise wins all 8. That result is why late binding is in the product, not just the model.
+- **Who you call next matters for walk-ins.** Calling the earliest-*planned* patient let early-arriving appointments overtake walk-ins who were already waiting, and the walk-in 90th-percentile wait was 44 min against 28 min for paper tokens. Calling whoever was *due* first (appointment time, or arrival for walk-ins) brings it to 27 min, and Turnwise then wins on every wait metric. That is the rule behind **Next up**.
 
-The cost is visible too. Reserving capacity for appointments pushes the slowest walk-ins later. A centre that cares more about walk-ins could hold back buffer capacity; this is a policy choice the comparison makes measurable.
+The cost is visible too. Turnwise finishes about 8 minutes later after closing. Paper tokens reward patients who arrive very early, so their long chains of tests (CBC, then LFT, then lipid profile) start sooner. Weighting the queue by chain length cut the overtime to 21 min but made the slowest appointments wait longer, so it isn't shipped. This is a policy choice the comparison makes measurable.
 
 On the seeded synthetic day, estimate error is around 4 min p50 and 6 min p90. These figures come from synthetic durations, so they show the measurement pipeline works rather than real-world accuracy. Stage 4 of the plan (a controlled pilot against a baseline) is what would make them meaningful.
 

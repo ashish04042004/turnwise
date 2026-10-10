@@ -1,5 +1,6 @@
 import { useAuth } from '../auth.jsx';
 import { useLive } from '../live.jsx';
+import NextUp from '../components/NextUp.jsx';
 import ProposalPanel from '../components/ProposalPanel.jsx';
 import QueueList from '../components/QueueList.jsx';
 import ResourcePanel from '../components/ResourcePanel.jsx';
@@ -43,6 +44,7 @@ export default function FloorPage() {
         </div>
       )}
       {board.proposal && <ProposalPanel key={board.proposal.id} proposal={board.proposal} />}
+      <NextUp items={board.nextUp ?? []} />
       <div className="floor-grid">
         <section className="panel queue-panel">
           <QueueList visits={board.visits} now={board.now} />

@@ -187,15 +187,17 @@ describe('disruption recovery', () => {
 });
 
 describe('late resource binding', () => {
+  const bays = [];
+  let bayService;
+  const walkIn = (name) => createWalkIn(centre, { patient: { name }, serviceIds: [bayService] }, 'test');
+
   it('swaps a blocked bay for an identical free one when staff start the service', async () => {
-    const bays = [];
     for (const name of ['Bay One', 'Bay Two']) {
       bays.push((await pool.query(`INSERT INTO resources (centre_id, name, kind, capabilities) VALUES ($1, $2, 'room', '{bay}') RETURNING id`, [centre.id, name])).rows[0].id);
     }
-    const bayService = (
+    bayService = (
       await pool.query(`INSERT INTO services (centre_id, code, name, category, duration_min, requirements) VALUES ($1, 'BAY', 'Bay test', 'test', 10, '{bay}') RETURNING id`, [centre.id])
     ).rows[0].id;
-    const walkIn = (name) => createWalkIn(centre, { patient: { name }, serviceIds: [bayService] }, 'test');
     const first = await walkIn('Bay First');
     const second = await walkIn('Bay Second');
     const third = await walkIn('Bay Third');
@@ -212,6 +214,27 @@ describe('late resource binding', () => {
     expect(await overlappingActiveReservations()).toBe(0);
 
     for (const v of [holder, third]) await completeStep(centre, v.steps[0].stepId, 'test');
+  });
+
+  it('swaps rather than bumping a later booking when a late patient is started', async () => {
+    const late = await walkIn('Bay Late');
+    const next = await walkIn('Bay Next');
+    const move = (stepId, resourceId, from, to) =>
+      Promise.all([
+        pool.query(`UPDATE reservations SET resource_id = $2, during = tstzrange(now() + make_interval(mins => $3), now() + make_interval(mins => $4), '[)') WHERE step_id = $1 AND status = 'confirmed'`, [stepId, resourceId, from, to]),
+        pool.query(`UPDATE visit_steps SET planned = tstzrange(now() + make_interval(mins => $2), now() + make_interval(mins => $3), '[)') WHERE id = $1`, [stepId, from, to]),
+      ]);
+    // The late patient was due on Bay One 20 minutes ago; someone else is booked there in 2 minutes.
+    await move(late.steps[0].stepId, bays[0], -20, -10);
+    await move(next.steps[0].stepId, bays[0], 2, 12);
+
+    const started = await startStep(centre, late.steps[0].stepId, {}, 'test');
+    expect(started.swapped).toMatchObject({ from: ['Bay One'], to: ['Bay Two'] });
+    expect(started.displaced).toEqual([]);
+    const { rows } = await pool.query(`SELECT status FROM visit_steps WHERE id = $1`, [next.steps[0].stepId]);
+    expect(rows[0].status).toBe('scheduled');
+    expect(await overlappingActiveReservations()).toBe(0);
+    await completeStep(centre, late.steps[0].stepId, 'test');
   });
 });
 

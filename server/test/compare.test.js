@@ -81,6 +81,19 @@ describe('turnwise policy', () => {
     expect(tw.every((r) => r.unserved === 0)).toBe(true);
   });
 
+  it('with due-order dispatch, an early appointment does not overtake a walk-in who is already waiting', () => {
+    const s = scenario([
+      { id: 'appt', kind: 'appointment', scheduledAt: open + 5 * MIN, arrival: open, codes: ['FBS'] },
+      { id: 'walk', kind: 'walk_in', arrival: open, codes: ['FBS'] },
+    ]);
+    const firstServed = (dispatch) => {
+      const results = simulateTurnwise({ ...s, dispatch }, configured(s));
+      return results.find((r) => r.steps[0].start === open).id;
+    };
+    expect(firstServed('plan')).toBe('appt');
+    expect(firstServed('due')).toBe('walk');
+  });
+
   it('never double-books a resource or the patient, even with overruns and late arrivals', () => {
     const visits = [
       { id: 'appt1', kind: 'appointment', scheduledAt: open, arrival: open + 15 * MIN, codes: ['USG'] },

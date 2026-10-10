@@ -36,6 +36,7 @@ export async function loadScenario(db, centre) {
     granularityMs: config.slotGranularityMin * 60_000,
     resources: resources.rows,
     lateBinding: true,
+    dispatch: 'due',
     services: new Map(services.rows.map((s, order) => [s.code, { durationMin: s.duration_min, requirements: s.requirements, order }])),
     prereqs: prereqMap,
     visits: visits.rows.map((v) => ({

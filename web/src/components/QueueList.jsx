@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { post } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { FLAG_LABEL, relative, STEP_LABEL, time, VISIT_LABEL } from '../format.js';
-import { useAction, useToast } from '../toast.jsx';
+import { useAction } from '../toast.jsx';
+import { useStartStep } from '../useStartStep.js';
 
 const TABS = {
   active: { label: 'On the floor', match: (v) => ['arrived', 'in_progress'].includes(v.status) || v.flags.includes('needs_replan') },
@@ -12,26 +13,11 @@ const TABS = {
 
 function StepRow({ step, visit }) {
   const run = useAction();
-  const toast = useToast();
+  const startStep = useStartStep();
   const { can } = useAuth();
   const late = step.delayMin >= 3 && step.status === 'scheduled';
   const canAct = can('floor') && ['arrived', 'in_progress'].includes(visit.status);
-
-  const start = async (force = false) => {
-    try {
-      const r = await post(`/steps/${step.id}/start`, { force });
-      const where = r.swapped ? ` in ${r.swapped.to.join(' + ')} (${r.swapped.from.join(' + ')} was busy)` : '';
-      toast(
-        r.displaced.length
-          ? `${step.serviceCode} started${where}; ${r.displaced.length} later booking(s) need a new time`
-          : `${step.serviceCode} started${where}`,
-        r.displaced.length ? 'info' : 'success',
-      );
-    } catch (err) {
-      if (err.details?.canForce && window.confirm(`${err.message}.\n\nStart anyway? The other booking will be re-planned.`)) return start(true);
-      toast(err.message, 'error');
-    }
-  };
+  const start = () => startStep(step.id, step.serviceCode);
 
   return (
     <li className={`step step-${step.status}`}>

@@ -8,12 +8,14 @@
  *                     head of a queue can be served (a token system).
  *   turnwise          Appointments are reserved in advance and walk-ins are
  *                     planned on arrival with the real planner, which picks
- *                     test order and resources. On the floor, staff start the
- *                     earliest-booked step whose patient is present and whose
- *                     booked resources are free, as the live queue suggests.
+ *                     test order and resources. On the floor, staff start a
+ *                     ready step whose patient is present and whose booked
+ *                     (or, with lateBinding, interchangeable) resources are
+ *                     free. dispatch 'plan' takes the earliest-planned step;
+ *                     'due' takes whoever was due first, as "Next up" does.
  *
  * Scenario (times are epoch ms):
- *   { open, close, granularityMs,
+ *   { open, close, granularityMs, lateBinding?, dispatch?: 'plan' | 'due',
  *     resources: [{ id, name, capabilities, active }],
  *     services: Map<code, { durationMin, requirements, order }>,
  *     prereqs: Map<code, [{ requires: code, minGapMin }]>,
@@ -170,6 +172,12 @@ export function simulateTurnwise(scenario, durations) {
   const walkIns = scenario.visits.filter((x) => x.kind === 'walk_in').sort((a, b) => a.arrival - b.arrival);
   let nextWalkIn = 0;
   let t = Math.min(...scenario.visits.map((v) => v.arrival));
+  /** Who goes first among ready patients: plan order, or when each patient was due (booked time / walk-in arrival). */
+  const dispatchKey = (p) => {
+    if (scenario.dispatch !== 'due') return p.start;
+    const v = visitsById.get(p.visitId);
+    return v.kind === 'appointment' ? v.scheduledAt : v.arrival;
+  };
   const isFree = (now) => (r) => (resourceFree.get(r) ?? 0) <= now;
   /** Booked resources if free, otherwise any interchangeable free ones (late binding). */
   const bindResources = (p, now) => {
@@ -190,7 +198,7 @@ export function simulateTurnwise(scenario, durations) {
       const steps = plannerSteps(v, v.arrival);
       commit(v, steps, planSteps(steps, stateAt(t)));
     }
-    const candidates = placements.filter((p) => ready(p, t)).sort((a, b) => a.start - b.start || a.stepId.localeCompare(b.stepId));
+    const candidates = placements.filter((p) => ready(p, t)).sort((a, b) => dispatchKey(a) - dispatchKey(b) || a.stepId.localeCompare(b.stepId));
     for (const p of candidates) {
       if (!ready(p, t)) continue;
       p.resourceIds = bindResources(p, t);
