@@ -273,7 +273,7 @@ async function buildBoard(centreId) {
     window: { opensAt: iso(snap.clock.opensAt), closesAt: iso(snap.clock.closesAt) },
     lastEventId: day.lastEventId,
     services: [...snap.services.values()].sort(
-      (a, b) => (categoryOrder.get(a.category) ?? 99) - (categoryOrder.get(b.category) ?? 99) || a.code.localeCompare(b.code),
+      (a, b) => (categoryOrder.get(a.category) ?? 99) - (categoryOrder.get(b.category) ?? 99) || a.sort_order - b.sort_order || a.code.localeCompare(b.code),
     ),
     resources,
     timeline,

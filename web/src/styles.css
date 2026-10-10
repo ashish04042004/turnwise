@@ -282,6 +282,53 @@ a {
   display: flex;
   gap: 6px;
 }
+
+/* Catalogue */
+.catalogue-page {
+  max-width: 1180px;
+}
+.catalogue-page .form-row label.narrow {
+  flex: 0 0 auto;
+  min-width: 120px;
+}
+.catalogue-page .form-row label.grow {
+  flex: 3;
+}
+.cap-picker,
+.prereqs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.cap-picker select,
+.prereqs select {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.cap-chip {
+  margin: 1px 4px 1px 0;
+  font-family: inherit;
+  font-weight: 500;
+  background: #eef2f7;
+  color: var(--ink-2);
+}
+.cap-chip button {
+  border: 0;
+  background: none;
+  margin-left: 4px;
+  padding: 0;
+  cursor: pointer;
+  color: var(--muted);
+  font: inherit;
+}
+.cap-chip button:hover {
+  color: var(--red);
+}
+.staff-table tr.edit-row > td {
+  background: #f8fafc;
+  padding: 4px 12px 10px;
+}
 .pin-reset input {
   width: 110px;
 }

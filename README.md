@@ -25,6 +25,7 @@ Stack: **PERN in plain JavaScript**. That is PostgreSQL, Express 5, React (Vite)
 | Capacity recovery | Cancellations and no-shows release capacity. A worker offers the slot to a compatible waitlisted patient with a time-limited link. |
 | Patient view | A token link shows the next test, a wait range and any pending offer. It updates live. |
 | Analytics | Wait p50/p90, utilisation, estimate error, disruption counts, cancellation → rebooked time, delivery reliability and API latency. All of it is computed from recorded events. |
+| Catalogue | Managers add and edit machines, rooms and people, the services patients can book (duration, what each needs, ordering rules), categories, capabilities, priority levels and opening hours. Taking a resource out of service, or removing a capability that upcoming bookings relied on, moves exactly those bookings into a re-plan proposal. Retired services stop being offered while history stays intact. |
 
 <p>
   <img src="docs/patient.png" width="260" alt="Patient view">
@@ -39,6 +40,8 @@ Stack: **PERN in plain JavaScript**. That is PostgreSQL, Express 5, React (Vite)
 <p><img src="docs/staff.png" width="640" alt="Staff management for managers"></p>
 
 <p><img src="docs/settings.png" width="640" alt="Per-centre settings, stored in the database and applied live"></p>
+
+<p><img src="docs/catalogue.png" width="640" alt="Catalogue: managers add and edit resources, services, categories, capabilities, priority levels and hours"></p>
 
 ![Analytics](docs/analytics.png)
 
@@ -79,7 +82,7 @@ This starts Postgres, Redis, a one-shot `migrate` job, the API (which also serve
 | `npm test` | Planner, projection, comparison, Postgres integration and HTTP auth tests (Vitest) |
 | `npm run lint` | ESLint over server and web |
 | `npm run loadtest` | Concurrency stress test against an isolated temporary centre |
-| `npm run e2e` | Browser smoke test (Playwright) against the built app and seeded demo centres: front desk adds a walk-in, a technician starts and completes it, roles are enforced, a second centre signs in its own staff, and a manager changes and resets a setting. Run `npm run build` and `npm run seed` first. Set `E2E_CHANNEL=msedge` or `chrome` to use an installed browser. |
+| `npm run e2e` | Browser smoke test (Playwright) against the built app and seeded demo centres: front desk adds a walk-in, a technician starts and completes it, roles are enforced, a second centre signs in its own staff, a manager changes and resets a setting, and a manager adds a machine and a service that front desk can then book, then retires it. Run `npm run build` and `npm run seed` first. Set `E2E_CHANNEL=msedge` or `chrome` to use an installed browser. |
 | `npm run seed` | Replace all centres with the ones in `SEED_FIXTURE` (default `server/fixtures/demo.json`) and generate a synthetic day at each from its own demand mixes |
 
 ### Deploy for free (Render)
@@ -111,6 +114,7 @@ The free tier has trade-offs:
 3. Click **Walk-in rush**. Three walk-ins arrive concurrently and each is fitted into a real gap.
 4. Click **Patient cancels**, then look at **Book & walk-in → Waitlist**. A compatible waitlisted patient receives a time-limited offer.
 5. Open **Analytics** and **Activity** to see the measured effect and the audit trail.
+6. Open **Catalogue**. Add a machine and a service that needs it, and it is bookable on **Book & walk-in** at once. Take a busy machine out of service, and its upcoming bookings land in a re-plan proposal on the Floor.
 
 ## Architecture
 
@@ -228,7 +232,7 @@ On the seeded synthetic day, estimate error is around 4 min p50 and 6 min p90. T
 
 - Single-day horizon per centre. Planning is greedy list scheduling with local backtracking, not a global optimiser.
 - Sign-in is PIN-based for a shared front-desk terminal. A larger deployment would want SSO.
-- Catalogue changes (resources, services, categories) are made through fixtures or SQL today. Settings and staff have screens, and the cache picks up either path.
+- Changing a service's duration or needs applies to new bookings; existing bookings keep the slot they were given. Demand mixes (used only to generate synthetic demand) and message wording are still edited in fixtures or SQL, and the cache picks up hand edits too.
 - Notifications are simulated. In production an SMS/WhatsApp provider would sit behind the same outbox.
 - Clinical priority is a staff decision. Turnwise orders by the priority staff set and never infers it.
 

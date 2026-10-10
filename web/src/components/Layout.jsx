@@ -10,6 +10,7 @@ const NAV = [
   ['/analytics', 'Analytics'],
   ['/activity', 'Activity'],
   ['/staff', 'Staff', 'staff'],
+  ['/catalogue', 'Catalogue', 'settings'],
   ['/settings', 'Settings', 'settings'],
 ];
 

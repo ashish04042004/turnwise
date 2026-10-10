@@ -105,3 +105,44 @@ test('each centre signs in its own staff, and a manager tunes its settings', asy
   await page.getByRole('link', { name: 'Activity' }).click();
   await expect(page.getByText(/Setting slot_search_options reset to default/).first()).toBeVisible();
 });
+
+test('a manager adds a machine and a service, front desk can book it, and retiring it withdraws it', async ({ page }) => {
+  const tag = Date.now().toString(36).toUpperCase();
+  const toast = (text) => expect(page.locator('.toast').filter({ hasText: text })).toBeVisible();
+  await signIn(page, 'Asha Menon', '1234');
+  await page.getByRole('link', { name: 'Catalogue' }).click();
+
+  await page.getByRole('button', { name: 'Capabilities', exact: true }).click();
+  await page.getByLabel('New capability').fill(`Densitometry ${tag}`);
+  await page.getByLabel('Code (permanent)').fill(`dexa_${tag}`);
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await toast(`Densitometry ${tag} added`);
+
+  await page.getByRole('button', { name: 'Resources', exact: true }).click();
+  const addResource = page.locator('section.panel').first();
+  await addResource.getByLabel('Name', { exact: true }).fill(`DEXA ${tag}`);
+  await addResource.getByLabel('Add capability').selectOption(`dexa_${tag}`);
+  await addResource.getByRole('button', { name: 'Add resource' }).click();
+  await toast(`DEXA ${tag} added`);
+
+  await page.getByRole('button', { name: 'Services', exact: true }).click();
+  const addService = page.locator('section.panel').first();
+  await addService.getByLabel('Name', { exact: true }).fill(`Bone density ${tag}`);
+  await addService.locator('label', { hasText: /^Category/ }).locator('select').selectOption({ index: 1 });
+  await addService.getByLabel('Duration (min)', { exact: true }).fill('20');
+  await addService.getByLabel('Add capability').selectOption(`dexa_${tag}`);
+  await addService.getByLabel('Code (short, permanent)').fill(`BD_${tag}`);
+  await addService.getByRole('button', { name: 'Add service' }).click();
+  await toast(`Bone density ${tag} added`);
+
+  await page.getByRole('link', { name: 'Book & walk-in' }).click();
+  await expect(page.locator('label.svc', { hasText: `BD_${tag}` })).toBeVisible();
+
+  await page.getByRole('link', { name: 'Catalogue' }).click();
+  await page.getByRole('button', { name: 'Services', exact: true }).click();
+  page.once('dialog', (d) => d.accept());
+  await page.getByRole('row', { name: new RegExp(`BD_${tag}`) }).getByRole('button', { name: 'Retire' }).click();
+  await toast(`Bone density ${tag} retired`);
+  await page.getByRole('link', { name: 'Book & walk-in' }).click();
+  await expect(page.locator('label.svc', { hasText: `BD_${tag}` })).toHaveCount(0);
+});

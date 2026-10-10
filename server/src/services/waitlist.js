@@ -10,8 +10,8 @@ import { insertPatient, insertStep, insertVisit, persistPlacement } from './pers
 export async function addToWaitlist(centre, { patient, serviceIds, earliest, latest }, actor) {
   if (latest <= earliest) throw badRequest('latest must be after earliest');
   return withTx(async (tx) => {
-    const { rows: known } = await tx.query(`SELECT id FROM services WHERE centre_id = $1 AND id = ANY($2)`, [centre.id, serviceIds]);
-    if (known.length !== serviceIds.length) throw badRequest('Unknown service');
+    const { rows: known } = await tx.query(`SELECT id FROM services WHERE centre_id = $1 AND id = ANY($2) AND active`, [centre.id, serviceIds]);
+    if (known.length !== serviceIds.length) throw badRequest('Unknown or retired service');
     const patientId = await insertPatient(tx, centre.id, patient);
     const { rows } = await tx.query(
       `INSERT INTO waitlist_entries (centre_id, patient_id, service_ids, earliest, latest, status)
@@ -57,6 +57,8 @@ export async function recoverCapacity(centreId, release, outboxId = null) {
       );
       const state = buildPlannerState(snap, new Set());
       for (const e of entries) {
+        // A service retired since they joined can't be offered; they stay on the list for staff to rebook.
+        if (e.service_ids.some((id) => !snap.services.get(id)?.active)) continue;
         const visitId = randomUUID();
         const steps = newVisitSteps(snap, {
           visitId,

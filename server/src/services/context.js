@@ -49,7 +49,7 @@ export async function loadSnapshot(db, centre) {
       db.query('SELECT id, name, kind, capabilities, active, sort_order FROM resources WHERE centre_id = $1 ORDER BY sort_order, name', [
         centre.id,
       ]),
-    () => db.query('SELECT id, code, name, category, duration_min, requirements FROM services WHERE centre_id = $1', [centre.id]),
+    () => db.query('SELECT id, code, name, category, duration_min, requirements, active, sort_order FROM services WHERE centre_id = $1', [centre.id]),
     () => db.query('SELECT sp.* FROM service_prerequisites sp JOIN services s ON s.id = sp.service_id WHERE s.centre_id = $1', [centre.id]),
     () => db.query(
       `SELECT id, resource_id, step_id, kind, status, lower(during) AS start, upper(during) AS "end", hold_expires_at, reason
@@ -157,6 +157,7 @@ export function newVisitSteps(snap, { visitId, serviceIds, earliest, priority, l
   return serviceIds.map((sid) => {
     const service = snap.services.get(sid);
     if (!service) throw badRequest(`Unknown service ${sid}`);
+    if (!service.active) throw badRequest(`${service.name} is no longer offered`);
     return {
       serviceId: sid,
       stepId: ids.get(sid),

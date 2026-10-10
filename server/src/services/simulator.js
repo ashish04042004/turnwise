@@ -60,13 +60,14 @@ export async function simTick(centreId) {
 export async function simWalkInRush(centreId, count = 3) {
   const centre = await getCentre(centreId);
   const people = await syntheticPeople(centre);
-  const { rows: services } = await pool.query(`SELECT id, code FROM services WHERE centre_id = $1`, [centre.id]);
+  const { rows: services } = await pool.query(`SELECT id, code FROM services WHERE centre_id = $1 AND active`, [centre.id]);
   const byCode = new Map(services.map((s) => [s.code, s.id]));
   // Fired concurrently on purpose: the reservation engine must arbitrate.
   const results = await Promise.allSettled(
     Array.from({ length: count }, (_, i) => {
       const seed = `${Date.now()}-${i}`;
       const codes = drawServices(centre, 'walk_in', unit(`mix${seed}`), byCode);
+      if (codes.length === 0) return Promise.reject(new Error('Every service in the drawn walk-in mix is retired'));
       return createWalkIn(centre, { patient: { name: people.name(seed), phone: people.phone(seed) }, serviceIds: codes.map((c) => byCode.get(c)) }, 'simulator');
     }),
   );

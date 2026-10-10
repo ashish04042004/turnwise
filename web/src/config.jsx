@@ -22,7 +22,7 @@ export function ConfigProvider({ children }) {
   }, [reload]);
 
   useEffect(() => {
-    if (lastEvent?.type === 'settings.changed') reload();
+    if (lastEvent?.type === 'settings.changed' || lastEvent?.type === 'catalogue.changed') reload();
   }, [lastEvent, reload]);
 
   const value = useMemo(() => {

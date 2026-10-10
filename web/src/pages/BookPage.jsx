@@ -184,7 +184,7 @@ function BookingDesk() {
             </label>
           )}
         </div>
-        <ServicePicker services={board.services} selected={serviceIds} onChange={(ids) => (setServiceIds(ids), reset())} />
+        <ServicePicker services={board.services.filter((s) => s.active)} selected={serviceIds} onChange={(ids) => (setServiceIds(ids), reset())} />
 
         {mode === 'walk_in' && (
           <button className="btn btn-primary" disabled={!valid} onClick={submitWalkIn}>

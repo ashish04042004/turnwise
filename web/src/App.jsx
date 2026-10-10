@@ -7,6 +7,7 @@ import { ToastProvider } from './toast.jsx';
 import ActivityPage from './pages/ActivityPage.jsx';
 import AnalyticsPage from './pages/AnalyticsPage.jsx';
 import BookPage from './pages/BookPage.jsx';
+import CataloguePage from './pages/CataloguePage.jsx';
 import FloorPage from './pages/FloorPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import PatientPage from './pages/PatientPage.jsx';
@@ -38,6 +39,7 @@ export default function App() {
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="activity" element={<ActivityPage />} />
             <Route path="staff" element={<StaffPage />} />
+            <Route path="catalogue" element={<CataloguePage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Routes>

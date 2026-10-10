@@ -30,6 +30,10 @@ const DESCRIBE = {
         : p.role
           ? `${p.name} is now ${roleLabel(p.role)}`
           : `${p.name}'s ${p.changed.includes('pin') ? 'PIN was reset' : 'details changed'}`,
+  'catalogue.changed': (p) =>
+    `${{ centre: 'Centre', category: 'Category', capability: 'Capability', resource: 'Resource', service: 'Service', priority: 'Priority level' }[p.entity] ?? p.entity} ${p.name} ${p.action}${
+      p.changed?.length ? ` (${p.changed.join(', ')})` : ''
+    }${p.displaced ? `; ${p.displaced} booking(s) need a new time` : ''}`,
   'settings.changed': (p) => `Setting ${p.key} ${p.reset ? 'reset to default' : 'changed'}: ${JSON.stringify(p.from)} → ${JSON.stringify(p.to)}`,
   'replan.proposed': (p) => `Re-plan proposed: ${p.trigger}`,
   'replan.applied': (p) => `Re-plan applied (${p.option}): ${p.moved} moved, ${p.unschedulable} without slot, decided in ${p.decisionSec}s`,
@@ -68,6 +72,7 @@ export default function ActivityPage() {
           <option value="waitlist">Waitlist</option>
           <option value="staff">Staff</option>
           <option value="settings">Settings</option>
+          <option value="catalogue">Catalogue</option>
         </select>
       </div>
       <p className="muted small">Every scheduling change is recorded in the same transaction as the change itself. Dashboards replay from this log after reconnecting.</p>

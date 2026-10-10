@@ -11,6 +11,23 @@ import { getAnalytics, getEvents } from './services/analytics.js';
 import { getBaselineComparison } from './services/comparison.js';
 import { getBoard, getPatientView } from './services/board.js';
 import { confirmHold, createHold, createWalkIn, releaseVisit, searchSlots } from './services/booking.js';
+import {
+  addCapability,
+  addCategory,
+  addResource,
+  addService,
+  catalogueSchemas as cat,
+  deleteCapability,
+  deleteCategory,
+  deletePriorityLevel,
+  getCatalogue,
+  savePriorityLevel,
+  updateCapability,
+  updateCategory,
+  updateCentre,
+  updateResource,
+  updateService,
+} from './services/catalogue.js';
 import { checkIn, completeStep, extendStep, startStep } from './services/operations.js';
 import { getCentre, getReference, listCentres, permissionsOf } from './services/reference.js';
 import { applyProposal, generateProposal, markResourceDown, markResourceUp, rejectProposal } from './services/replan.js';
@@ -192,6 +209,37 @@ export function createApp() {
     res.json(await updateSetting(req.staff.centre_id, settingKey.parse(req.params.key), value, actorOf(req)));
   });
   api.delete('/settings/:key', configure, async (req, res) => res.json(await resetSetting(req.staff.centre_id, settingKey.parse(req.params.key), actorOf(req))));
+
+  // Catalogue: the centre's hours, categories, capabilities, resources, services and priority levels.
+  const centreId = (req) => req.staff.centre_id;
+  api.get('/catalogue', configure, async (req, res) => res.json(await getCatalogue(centreId(req))));
+  api.patch('/catalogue/centre', configure, async (req, res) => res.json(await updateCentre(centreId(req), cat.centre.parse(req.body), actorOf(req))));
+  api.post('/catalogue/categories', configure, async (req, res) => res.status(201).json(await addCategory(centreId(req), cat.addCategory.parse(req.body), actorOf(req))));
+  api.patch('/catalogue/categories/:code', configure, async (req, res) =>
+    res.json(await updateCategory(centreId(req), cat.code.parse(req.params.code), cat.updateCategory.parse(req.body), actorOf(req))),
+  );
+  api.delete('/catalogue/categories/:code', configure, async (req, res) => res.json(await deleteCategory(centreId(req), cat.code.parse(req.params.code), actorOf(req))));
+  api.post('/catalogue/capabilities', configure, async (req, res) =>
+    res.status(201).json(await addCapability(centreId(req), cat.addCapability.parse(req.body), actorOf(req))),
+  );
+  api.patch('/catalogue/capabilities/:code', configure, async (req, res) =>
+    res.json(await updateCapability(centreId(req), cat.code.parse(req.params.code), cat.updateCapability.parse(req.body), actorOf(req))),
+  );
+  api.delete('/catalogue/capabilities/:code', configure, async (req, res) => res.json(await deleteCapability(centreId(req), cat.code.parse(req.params.code), actorOf(req))));
+  api.post('/catalogue/resources', configure, async (req, res) => res.status(201).json(await addResource(centreId(req), cat.addResource.parse(req.body), actorOf(req))));
+  api.patch('/catalogue/resources/:id', configure, async (req, res) =>
+    res.json(await updateResource(centreId(req), uuid.parse(req.params.id), cat.updateResource.parse(req.body), actorOf(req))),
+  );
+  api.post('/catalogue/services', configure, async (req, res) => res.status(201).json(await addService(centreId(req), cat.addService.parse(req.body), actorOf(req))));
+  api.patch('/catalogue/services/:id', configure, async (req, res) =>
+    res.json(await updateService(centreId(req), uuid.parse(req.params.id), cat.updateService.parse(req.body), actorOf(req))),
+  );
+  api.put('/catalogue/priority-levels/:level', configure, async (req, res) =>
+    res.json(await savePriorityLevel(centreId(req), cat.level.parse(req.params.level), cat.priority.parse(req.body), actorOf(req))),
+  );
+  api.delete('/catalogue/priority-levels/:level', configure, async (req, res) =>
+    res.json(await deletePriorityLevel(centreId(req), cat.level.parse(req.params.level), actorOf(req))),
+  );
 
   const manageStaff = requirePermission('staff');
   api.get('/staff', manageStaff, async (req, res) => res.json({ staff: await listAllStaff(req.staff.centre_id) }));
