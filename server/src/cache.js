@@ -50,11 +50,33 @@ function redisClient() {
     });
     redis.on('error', () => undefined);
   }
-  return redis.status === 'ready' ? redis : null;
+  return redis;
+}
+
+/**
+ * The client once it can take commands. A process's first use waits briefly
+ * for the initial connection, so an early invalidation is not silently
+ * skipped and left stale in Redis; a client that lost its connection is
+ * treated as down until it reconnects.
+ */
+async function readyClient() {
+  const client = redisClient();
+  if (!client || client.status === 'ready') return client;
+  if (client.status !== 'connecting' && client.status !== 'connect') return null;
+  return new Promise((resolve) => {
+    const finish = (ok) => {
+      clearTimeout(timer);
+      client.off('ready', onReady);
+      resolve(ok ? client : null);
+    };
+    const onReady = () => finish(true);
+    const timer = setTimeout(() => finish(false), 1000);
+    client.once('ready', onReady);
+  });
 }
 
 async function viaRedis(fn) {
-  const client = redisClient();
+  const client = await readyClient();
   if (!client) return undefined;
   try {
     return await fn(client);
