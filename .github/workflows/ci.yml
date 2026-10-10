@@ -37,3 +37,11 @@ jobs:
       - name: Concurrency load test (fails on any double booking)
         run: npm run loadtest -- --clients 30 --attempts 200 --slots 10 --walkins 30
       - run: npm run build
+
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production image
+        run: docker build -t turnwise-app .

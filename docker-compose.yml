@@ -27,5 +27,47 @@ services:
       timeout: 3s
       retries: 20
 
+  # Full stack: `docker compose --profile app up --build` (http://localhost:8080, or set TURNWISE_PORT).
+  migrate:
+    profiles: [app]
+    image: turnwise-app
+    build: .
+    command: ["node", "server/src/migrate.js"]
+    healthcheck:
+      disable: true
+    environment: &app-env
+      DATABASE_URL: postgres://turnwise:turnwise@postgres:5432/turnwise
+      REDIS_URL: redis://redis:6379
+      SESSION_SECRET: ${SESSION_SECRET:-insecure-demo-secret-change-me}
+      ENABLE_SIMULATOR: ${ENABLE_SIMULATOR:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    profiles: [app]
+    image: turnwise-app
+    environment: *app-env
+    ports:
+      - "${TURNWISE_PORT:-8080}:4100"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    profiles: [app]
+    image: turnwise-app
+    command: ["node", "server/src/worker.js"]
+    environment: *app-env
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
 volumes:
   turnwise-pg:

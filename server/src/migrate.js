@@ -5,22 +5,30 @@ import { isMain } from './util.js';
 
 const dir = fileURLToPath(new URL('../migrations/', import.meta.url));
 
+/** Applies pending migrations; a session advisory lock makes concurrent starts (several containers) safe. */
 export async function migrate() {
-  await pool.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
-    name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`);
-  const applied = new Set((await pool.query('SELECT name FROM schema_migrations')).rows.map((r) => r.name));
-  const files = (await readdir(dir)).filter((f) => f.endsWith('.sql')).sort();
-  const ran = [];
-  for (const file of files) {
-    if (applied.has(file)) continue;
-    const sql = await readFile(dir + file, 'utf8');
-    await withTx(async (tx) => {
-      await tx.query(sql);
-      await tx.query('INSERT INTO schema_migrations (name) VALUES ($1)', [file]);
-    });
-    ran.push(file);
+  const lock = await pool.connect();
+  try {
+    await lock.query(`SELECT pg_advisory_lock(hashtext('turnwise:migrate'))`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
+      name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`);
+    const applied = new Set((await pool.query('SELECT name FROM schema_migrations')).rows.map((r) => r.name));
+    const files = (await readdir(dir)).filter((f) => f.endsWith('.sql')).sort();
+    const ran = [];
+    for (const file of files) {
+      if (applied.has(file)) continue;
+      const sql = await readFile(dir + file, 'utf8');
+      await withTx(async (tx) => {
+        await tx.query(sql);
+        await tx.query('INSERT INTO schema_migrations (name) VALUES ($1)', [file]);
+      });
+      ran.push(file);
+    }
+    return ran;
+  } finally {
+    await lock.query(`SELECT pg_advisory_unlock(hashtext('turnwise:migrate'))`).catch(() => undefined);
+    lock.release();
   }
-  return ran;
 }
 
 if (isMain(import.meta.url)) {

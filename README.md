@@ -55,7 +55,16 @@ Open http://localhost:5173 and sign in with one of the demo staff accounts:
 | Ravi Kumar | Front desk | 1111 | Walk-ins, bookings, check-in, cancellations, waitlist, approving re-plans |
 | Farah Khan | Technician | 2222 | Start, complete and extend services; report machines unavailable |
 
-Everyone can see the floor, analytics and activity. For a production-style run, use `npm run build`, then `npm start` and `npm run start:worker` with `NODE_ENV=production` and a `SESSION_SECRET`. The API serves the built UI at http://localhost:4100.
+Everyone can see the floor, analytics and activity.
+
+### Run everything in containers
+
+```bash
+SESSION_SECRET=$(openssl rand -base64 32) docker compose --profile app up --build -d
+docker compose run --rm api node server/src/seed.js   # synthetic demo day
+```
+
+This starts Postgres, Redis, a one-shot `migrate` job, the API (which also serves the dashboard) and the worker. Open http://localhost:8080, or set `TURNWISE_PORT` if 8080 is taken. The image runs as a non-root user with `NODE_ENV=production`, so session cookies are marked `Secure`. Serve it over HTTPS anywhere other than localhost. For a production-style run, use `npm run build`, then `npm start` and `npm run start:worker` with `NODE_ENV=production` and a `SESSION_SECRET`. The API serves the built UI at http://localhost:4100.
 
 | Command | Purpose |
 | --- | --- |
