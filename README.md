@@ -2,6 +2,8 @@
 
 **Smarter turns. Smoother operations.**
 
+**Live demo:** [turnwise.onrender.com](https://turnwise.onrender.com). Sign in as Asha with PIN `1234`. It runs on a free plan, so the first visit after a quiet spell takes about a minute to wake up.
+
 Turnwise is a live operating system for a diagnostic centre's limited resources: machines, rooms and the staff who run them. It is not an appointment-booking app. It treats appointments and walk-ins as one queue, places every test only when *all* the resources it needs are free together, and keeps the plan honest as reality drifts. When a machine breaks, a service overruns or a patient cancels, staff get a concrete, checked alternative to approve instead of a phone call and a spreadsheet.
 
 Stack: **PERN in plain JavaScript**. That is PostgreSQL, Express 5, React (Vite) and Node, plus Redis/BullMQ for background work and Server-Sent Events for live updates. All patient data is synthetic.
