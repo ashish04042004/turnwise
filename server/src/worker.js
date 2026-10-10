@@ -2,6 +2,7 @@ import { Worker } from 'bullmq';
 import { closeCache } from './cache.js';
 import { config } from './config.js';
 import { pool, withTx } from './db.js';
+import { refreshDemoIfStale } from './demo.js';
 import { startCacheInvalidation } from './invalidation.js';
 import { deliveryJobOptions, makeQueue, QUEUES, redisConnection } from './queue.js';
 import { expireHolds } from './services/booking.js';
@@ -73,6 +74,8 @@ const workers = [
           for (const id of ids) n += await sweepOverruns(id);
           return { extended: n };
         }
+        case 'refresh-demo':
+          return { reseeded: await refreshDemoIfStale() };
         default:
           throw new Error(`Unknown maintenance job ${job.name}`);
       }
@@ -119,6 +122,8 @@ workers[0].on('failed', (job, err) => console.error(`[worker] ${job?.name} faile
 await maintenance.upsertJobScheduler('expire-holds', { every: 10_000 }, { name: 'expire-holds' });
 await maintenance.upsertJobScheduler('relay-outbox', { every: 2_000 }, { name: 'relay-outbox' });
 await maintenance.upsertJobScheduler('sweep-overruns', { every: 30_000 }, { name: 'sweep-overruns' });
+if (config.demoAutoRefresh) await maintenance.upsertJobScheduler('refresh-demo', { every: 10 * 60_000 }, { name: 'refresh-demo' });
+else await maintenance.removeJobScheduler('refresh-demo');
 
 console.log('[worker] Turnwise worker running: hold expiry, outbox relay, overrun sweeper, notifications, capacity recovery');
 

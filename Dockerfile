@@ -22,5 +22,6 @@ COPY server/fixtures server/fixtures
 COPY --from=build /app/web/dist web/dist
 USER node
 EXPOSE 4100
-HEALTHCHECK --interval=10s --timeout=3s --retries=5 CMD wget -qO- http://127.0.0.1:4100/api/health || exit 1
+# Hosts such as Render set PORT; the health check follows it.
+HEALTHCHECK --interval=10s --timeout=3s --retries=5 CMD wget -qO- "http://127.0.0.1:${PORT:-4100}/api/health" || exit 1
 CMD ["node", "server/src/index.js"]

@@ -78,6 +78,26 @@ This starts Postgres, Redis, a one-shot `migrate` job, the API (which also serve
 | `npm run e2e` | Browser smoke test (Playwright) against the built app and seeded demo centres: front desk adds a walk-in, a technician starts and completes it, roles are enforced, a second centre signs in its own staff, and a manager changes and resets a setting. Run `npm run build` and `npm run seed` first. Set `E2E_CHANNEL=msedge` or `chrome` to use an installed browser. |
 | `npm run seed` | Replace all centres with the ones in `SEED_FIXTURE` (default `server/fixtures/demo.json`) and generate a synthetic day at each from its own demand mixes |
 
+### Deploy for free (Render)
+
+`render.yaml` is a Render Blueprint for a free deployment of the demo with three pieces: a Docker web service, Postgres and Key Value (Redis-compatible). In the Render dashboard choose **New → Blueprint**, connect this repository and apply. Render generates `SESSION_SECRET` and wires `DATABASE_URL` and `REDIS_URL` itself. The app gets a public `https://…onrender.com` address with no further setup.
+
+A free plan allows one web service, so the Blueprint switches on single-service mode with these settings:
+
+- **`RUN_WORKER_IN_API`**: the BullMQ worker runs inside the API process.
+- **`MIGRATE_ON_START`**: pending migrations run before the server listens.
+- **`DEMO_AUTO_REFRESH`**: the demo seeds itself on first start. It re-seeds once when the day rolls over and once each time the default centre opens or closes, so a visitor always sees a coherent day. It checks on boot and every 10 minutes, and an advisory lock stops two instances seeding at once.
+- **`TRUST_PROXY=1`**: client addresses come from Render's proxy, so sign-in rate limits apply per visitor.
+
+Keep `DEMO_AUTO_REFRESH` off anywhere the data matters, because a re-seed replaces every centre.
+
+The free tier has trade-offs:
+
+- **Sleep.** The service sleeps after about 15 idle minutes, and the first request after that takes roughly a minute while it wakes.
+- **Database expiry.** Render's free Postgres expires after 30 days. Point `DATABASE_URL` at another free Postgres such as Neon or Supabase to keep it longer; `MIGRATE_ON_START` sets up the schema.
+- **Key Value is not persisted.** That's harmless here: Postgres is the source of truth, and the queue and caches rebuild.
+- **Public PINs.** The demo PINs are in this README and the data is synthetic, so treat a public deployment as a showcase only.
+
 ### Five-minute demo
 
 1. **Floor**: sign in as Asha (manager). In *Simulate a morning*, turn on **Floor autopilot**. Patients arrive, start and finish, and the timeline and estimates move live.

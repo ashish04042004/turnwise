@@ -23,6 +23,12 @@ function flag(name, fallback) {
   return raw === 'true' || raw === '1';
 }
 
+function proxySetting(raw) {
+  if (raw === undefined || raw === '') return 'loopback';
+  if (/^\d+$/.test(raw)) return Number(raw);
+  return raw === 'true' ? true : raw;
+}
+
 const production = process.env.NODE_ENV === 'production';
 if (production && !process.env.SESSION_SECRET) throw new Error('SESSION_SECRET must be set in production');
 
@@ -34,6 +40,14 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL ?? 'postgres://turnwise:turnwise@localhost:5433/turnwise',
   redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6380',
   port: num('PORT', 4100),
+  /** Express "trust proxy": hops of reverse proxy in front of the API, so rate limits see the client's address. */
+  trustProxy: proxySetting(process.env.TRUST_PROXY),
+  /** Run the BullMQ worker inside the API process (single-service hosting, e.g. a free tier). */
+  workerInApi: flag('RUN_WORKER_IN_API', false),
+  /** Apply pending migrations before serving (safe with several instances: migrations take a lock). */
+  migrateOnStart: flag('MIGRATE_ON_START', false),
+  /** Keep a hosted demo alive: seed when empty, re-seed when the synthetic day is over or from a previous day. */
+  demoAutoRefresh: flag('DEMO_AUTO_REFRESH', false),
   notifyFailureRate: num('NOTIFY_FAILURE_RATE', 0.15),
   enableSimulator: flag('ENABLE_SIMULATOR', true),
   /** Fixture loaded by `npm run seed` (path relative to server/). */

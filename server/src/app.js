@@ -81,7 +81,7 @@ async function clientConfig(req) {
 export function createApp() {
   const app = express();
   app.disable('x-powered-by');
-  app.set('trust proxy', 'loopback');
+  app.set('trust proxy', config.trustProxy);
   app.use(express.json({ limit: '100kb' }));
   app.use(latencyMiddleware);
 

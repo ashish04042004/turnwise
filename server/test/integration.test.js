@@ -5,6 +5,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeCache } from '../src/cache.js';
 import { isCapacityConflict, pool } from '../src/db.js';
+import { demoStaleness } from '../src/demo.js';
 import { enqueueOutbox } from '../src/events.js';
 import { migrate } from '../src/migrate.js';
 import { confirmHold, createHold, createWalkIn } from '../src/services/booking.js';
@@ -268,5 +269,37 @@ describe('transactional outbox', () => {
     for (let i = 0; i < 3; i++) await enqueueOutbox(pool, centre.id, 'notify.patient', { message: 'hi' }, `test-dup-${centre.id}`);
     const { rows } = await pool.query(`SELECT count(*)::int AS n FROM outbox WHERE idempotency_key = $1`, [`test-dup-${centre.id}`]);
     expect(rows[0].n).toBe(1);
+  });
+});
+
+describe('hosted demo refresh', () => {
+  const seededAt = async (sql) => {
+    await pool.query(`DELETE FROM events WHERE centre_id = $1 AND type = 'centre.seeded'`, [centre.id]);
+    if (!sql) return;
+    const params = sql.includes('$2') ? [centre.id, centre.timezone] : [centre.id];
+    await pool.query(`INSERT INTO events (centre_id, type, actor, created_at) VALUES ($1, 'centre.seeded', 'test', ${sql})`, params);
+  };
+  const localToday = (hhmm) => `(date_trunc('day', now() AT TIME ZONE $2) + time '${hhmm}') AT TIME ZONE $2`;
+
+  it('re-seeds once per day or open/closed transition, not on every check while closed', async () => {
+    await seededAt(null);
+    expect(await demoStaleness(centre.id)).toMatch(/earlier day/);
+    await seededAt(`now() - interval '1 day'`);
+    expect(await demoStaleness(centre.id)).toMatch(/earlier day/);
+    await seededAt(localToday('03:00'));
+    expect(await demoStaleness(centre.id)).toMatch(/opened/);
+    await seededAt(`now() - interval '5 minutes'`);
+    expect(await demoStaleness(centre.id)).toBeNull();
+
+    await pool.query(`UPDATE centres SET closes_at = '09:00' WHERE id = $1`, [centre.id]);
+    try {
+      await seededAt(localToday('08:00'));
+      expect(await demoStaleness(centre.id)).toMatch(/closed/);
+      await seededAt(`now() - interval '5 minutes'`);
+      expect(await demoStaleness(centre.id)).toBeNull();
+    } finally {
+      await pool.query(`UPDATE centres SET closes_at = '23:00' WHERE id = $1`, [centre.id]);
+      await seededAt(null);
+    }
   });
 });
