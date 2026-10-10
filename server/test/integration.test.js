@@ -184,6 +184,35 @@ describe('disruption recovery', () => {
   });
 });
 
+describe('late resource binding', () => {
+  it('swaps a blocked bay for an identical free one when staff start the service', async () => {
+    const bays = [];
+    for (const name of ['Bay One', 'Bay Two']) {
+      bays.push((await pool.query(`INSERT INTO resources (centre_id, name, kind, capabilities) VALUES ($1, $2, 'room', '{bay}') RETURNING id`, [centre.id, name])).rows[0].id);
+    }
+    const bayService = (
+      await pool.query(`INSERT INTO services (centre_id, code, name, category, duration_min, requirements) VALUES ($1, 'BAY', 'Bay test', 'test', 10, '{bay}') RETURNING id`, [centre.id])
+    ).rows[0].id;
+    const walkIn = (name) => createWalkIn(centre, { patient: { name }, serviceIds: [bayService] }, 'test');
+    const first = await walkIn('Bay First');
+    const second = await walkIn('Bay Second');
+    const third = await walkIn('Bay Third');
+    const thirdBay = third.steps[0].resources[0];
+    const [holder, other] = first.steps[0].resources[0] === thirdBay ? [first, second] : [second, first];
+
+    await startStep(centre, holder.steps[0].stepId, { force: true }, 'test');
+    await startStep(centre, other.steps[0].stepId, { force: true }, 'test');
+    await completeStep(centre, other.steps[0].stepId, 'test');
+
+    const started = await startStep(centre, third.steps[0].stepId, {}, 'test');
+    expect(started.swapped).toMatchObject({ from: [thirdBay], to: [other.steps[0].resources[0]] });
+    expect(started.displaced).toEqual([]);
+    expect(await overlappingActiveReservations()).toBe(0);
+
+    for (const v of [holder, third]) await completeStep(centre, v.steps[0].stepId, 'test');
+  });
+});
+
 describe('overrun sweeper', () => {
   async function runningStepEndingAgo(minutesAgo) {
     const walkIn = await createWalkIn(centre, { patient: { name: `Overrun ${minutesAgo}` }, serviceIds: [svc.SOLO] }, 'test');

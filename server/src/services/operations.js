@@ -1,5 +1,6 @@
 import { config } from '../config.js';
-import { conflict, notFound, pool, withTx } from '../db.js';
+import { conflict, isExclusionViolation, notFound, pool, withTx } from '../db.js';
+import { candidateOptions, matchRequirements } from '../domain/scheduler.js';
 import { recordEvent } from '../events.js';
 import { getCentre, loadSnapshot } from './context.js';
 import { fmtTime } from './booking.js';
@@ -25,19 +26,34 @@ async function lockStep(tx, centreId, stepId) {
  * now overlaps are displaced (delay propagation); earlier bookings are
  * protected unless staff explicitly force the override.
  */
-async function occupy(tx, centre, step, start, end, { protectBefore = null, force = false, reason, actor }) {
+async function occupy(tx, centre, step, start, end, { protectBefore = null, force = false, rebind = false, reason, actor }) {
   const { rows: mine } = await tx.query(`SELECT resource_id FROM reservations WHERE step_id = $1 AND status IN ('confirmed', 'in_use')`, [step.id]);
   if (mine.length === 0) throw conflict('This step has no active reservation; re-plan it first');
-  const rids = mine.map((r) => r.resource_id);
+  let rids = mine.map((r) => r.resource_id);
 
-  const { rows: clashes } = await tx.query(
-    `SELECT r.step_id, r.kind, r.status, lower(r.during) AS start, res.name AS resource, p.name AS patient
-     FROM reservations r JOIN resources res ON res.id = r.resource_id
-     LEFT JOIN visit_steps s ON s.id = r.step_id LEFT JOIN visits v ON v.id = s.visit_id LEFT JOIN patients p ON p.id = v.patient_id
-     WHERE r.resource_id = ANY($1) AND r.status IN ('held', 'confirmed', 'in_use')
-       AND r.during && tstzrange($2, $3, '[)') AND r.step_id IS DISTINCT FROM $4`,
-    [rids, start, end, step.id],
-  );
+  const findClashes = async () =>
+    (
+      await tx.query(
+        `SELECT r.step_id, r.resource_id, r.kind, r.status, lower(r.during) AS start, res.name AS resource, p.name AS patient
+         FROM reservations r JOIN resources res ON res.id = r.resource_id
+         LEFT JOIN visit_steps s ON s.id = r.step_id LEFT JOIN visits v ON v.id = s.visit_id LEFT JOIN patients p ON p.id = v.patient_id
+         WHERE r.resource_id = ANY($1) AND r.status IN ('held', 'confirmed', 'in_use')
+           AND r.during && tstzrange($2, $3, '[)') AND r.step_id IS DISTINCT FROM $4`,
+        [rids, start, end, step.id],
+      )
+    ).rows;
+  const blocks = (c) => c.kind === 'downtime' || c.status === 'in_use' || (!force && protectBefore && c.start < protectBefore);
+
+  let clashes = await findClashes();
+  let swapped = null;
+  const blocked = new Set(clashes.filter(blocks).map((c) => c.resource_id));
+  if (rebind && blocked.size > 0) {
+    swapped = await rebindResources(tx, centre, step, rids, blocked, start, end);
+    if (swapped) {
+      rids = swapped.resourceIds;
+      clashes = await findClashes();
+    }
+  }
   for (const c of clashes) {
     if (c.kind === 'downtime') throw conflict(`${c.resource} is marked unavailable`);
     if (c.status === 'in_use') throw conflict(`${c.resource} is still busy with ${c.patient}`);
@@ -64,7 +80,42 @@ async function occupy(tx, centre, step, start, end, { protectBefore = null, forc
      WHERE id = $1`,
     [step.id, start, end],
   );
-  return displaced;
+  return { displaced, swapped };
+}
+
+/**
+ * Late binding: when a booked machine, room or person is blocked, swap in an
+ * interchangeable one that is completely free for [start, end) instead of
+ * making the patient wait. Returns the new assignment or null.
+ */
+async function rebindResources(tx, centre, step, rids, blocked, start, end) {
+  const { rows: svc } = await tx.query(`SELECT sv.requirements FROM visit_steps s JOIN services sv ON sv.id = s.service_id WHERE s.id = $1`, [step.id]);
+  const kept = rids.filter((id) => !blocked.has(id));
+  const { rows: resources } = await tx.query(
+    `SELECT res.id, res.name, res.capabilities, res.active FROM resources res
+     WHERE res.centre_id = $1 AND res.active AND (res.id = ANY($2) OR NOT EXISTS (
+       SELECT 1 FROM reservations r WHERE r.resource_id = res.id AND r.status IN ('held', 'confirmed', 'in_use')
+         AND r.during && tstzrange($3, $4, '[)')))`,
+    [centre.id, kept, start, end],
+  );
+  const chosen = matchRequirements(candidateOptions(svc[0].requirements, resources, () => true, kept));
+  if (!chosen) return null;
+  const removed = rids.filter((id) => !chosen.includes(id));
+  const added = chosen.filter((id) => !rids.includes(id));
+  for (let i = 0; i < removed.length; i++) {
+    await tx.query(
+      `UPDATE reservations SET resource_id = $3, during = tstzrange($4, $5, '[)')
+       WHERE step_id = $1 AND resource_id = $2 AND status IN ('confirmed', 'in_use')`,
+      [step.id, removed[i], added[i], start, end],
+    );
+  }
+  const name = new Map(resources.map((r) => [r.id, r.name]));
+  const { rows: old } = await tx.query(`SELECT id, name FROM resources WHERE id = ANY($1)`, [removed]);
+  return {
+    resourceIds: chosen,
+    from: removed.map((id) => old.find((r) => r.id === id)?.name ?? id),
+    to: added.map((id) => name.get(id)),
+  };
 }
 
 async function proposeIfDisplaced(centre, displaced, trigger, actor) {
@@ -100,30 +151,40 @@ export async function checkIn(centre, visitId, actor) {
 }
 
 export async function startStep(centre, stepId, { force = false } = {}, actor) {
-  const result = await withTx(async (tx) => {
-    const s = await lockStep(tx, centre.id, stepId);
-    if (s.status !== 'scheduled') throw conflict(`Step is ${s.status}`);
-    if (!['arrived', 'in_progress'].includes(s.visit_status)) throw conflict(`Check ${s.patient} in before starting`);
-    const start = s.now;
-    const end = new Date(start.getTime() + (s.planned_end - s.planned_start));
-    const displaced = await occupy(tx, centre, s, start, end, {
-      protectBefore: s.planned_start,
-      force,
-      reason: `${s.service} for ${s.patient} started at ${fmtTime(start, centre.timezone)}`,
-      actor,
+  let result;
+  try {
+    result = await withTx(async (tx) => {
+      const s = await lockStep(tx, centre.id, stepId);
+      if (s.status !== 'scheduled') throw conflict(`Step is ${s.status}`);
+      if (!['arrived', 'in_progress'].includes(s.visit_status)) throw conflict(`Check ${s.patient} in before starting`);
+      const start = s.now;
+      const end = new Date(start.getTime() + (s.planned_end - s.planned_start));
+      const { displaced, swapped } = await occupy(tx, centre, s, start, end, {
+        protectBefore: s.planned_start,
+        force,
+        rebind: true,
+        reason: `${s.service} for ${s.patient} started at ${fmtTime(start, centre.timezone)}`,
+        actor,
+      });
+      await tx.query(`UPDATE visits SET status = 'in_progress' WHERE id = $1`, [s.visit_id]);
+      const lateMin = Math.round((start - s.planned_start) / 60_000);
+      if (swapped) {
+        await recordEvent(tx, centre.id, 'step.resources_swapped', stepId, { patient: s.patient, service: s.service, from: swapped.from, to: swapped.to }, actor);
+      }
+      await recordEvent(tx, centre.id, 'step.started', stepId, { patient: s.patient, service: s.service, lateMin, forced: force }, actor);
+      return { s, displaced, swapped, lateMin };
     });
-    await tx.query(`UPDATE visits SET status = 'in_progress' WHERE id = $1`, [s.visit_id]);
-    const lateMin = Math.round((start - s.planned_start) / 60_000);
-    await recordEvent(tx, centre.id, 'step.started', stepId, { patient: s.patient, service: s.service, lateMin, forced: force }, actor);
-    return { s, displaced, lateMin };
-  });
+  } catch (err) {
+    if (isExclusionViolation(err)) throw conflict('That resource was just taken; refresh and try again');
+    throw err;
+  }
   const proposalId = await proposeIfDisplaced(
     centre,
     result.displaced,
     `${result.s.service} for ${result.s.patient} started ${result.lateMin > 0 ? `${result.lateMin} min late` : 'out of order'}`,
     actor,
   );
-  return { displaced: result.displaced, proposalId };
+  return { displaced: result.displaced, swapped: result.swapped, proposalId };
 }
 
 export async function completeStep(centre, stepId, actor) {
@@ -158,7 +219,7 @@ export async function extendStep(centre, stepId, minutes, actor) {
     const s = await lockStep(tx, centre.id, stepId);
     if (s.status !== 'in_service') throw conflict(`Step is ${s.status}`);
     const end = new Date(Math.max(s.planned_end.getTime(), s.now.getTime()) + minutes * 60_000);
-    const displaced = await occupy(tx, centre, s, s.actual_start, end, { force: true, reason: `${s.service} for ${s.patient} is overrunning`, actor });
+    const { displaced } = await occupy(tx, centre, s, s.actual_start, end, { force: true, reason: `${s.service} for ${s.patient} is overrunning`, actor });
     await recordEvent(tx, centre.id, 'step.extended', stepId, { patient: s.patient, service: s.service, minutes, displaced: displaced.length }, actor);
     return { s, displaced };
   });

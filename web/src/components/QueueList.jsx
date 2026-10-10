@@ -18,8 +18,11 @@ function StepRow({ step, visit }) {
   const start = async (force = false) => {
     try {
       const r = await post(`/steps/${step.id}/start`, { force });
+      const where = r.swapped ? ` in ${r.swapped.to.join(' + ')} (${r.swapped.from.join(' + ')} was busy)` : '';
       toast(
-        r.displaced.length ? `${step.serviceCode} started; ${r.displaced.length} later booking(s) need a new time` : `${step.serviceCode} started`,
+        r.displaced.length
+          ? `${step.serviceCode} started${where}; ${r.displaced.length} later booking(s) need a new time`
+          : `${step.serviceCode} started${where}`,
         r.displaced.length ? 'info' : 'success',
       );
     } catch (err) {

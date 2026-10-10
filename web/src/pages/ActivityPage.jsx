@@ -14,6 +14,7 @@ const DESCRIBE = {
   'visit.cancelled': (p) => `${p.patient} cancelled${p.reason ? ` — ${p.reason}` : ''}`,
   'visit.no_show': (p) => `${p.patient} marked no-show`,
   'step.started': (p) => `${p.patient} started ${p.service}${p.lateMin > 2 ? ` (${p.lateMin} min late)` : ''}${p.forced ? ' — staff override' : ''}`,
+  'step.resources_swapped': (p) => `${p.patient}'s ${p.service} moved from ${p.from.join(', ')} to ${p.to.join(', ')} (free and interchangeable)`,
   'step.completed': (p) => `${p.patient} finished ${p.service} in ${p.durationMin} min`,
   'step.extended': (p) => `${p.patient}'s ${p.service} extended by ${p.minutes} min${p.displaced ? `, displacing ${p.displaced}` : ''}`,
   'step.displaced': (p) => `${p.patient}'s ${p.service} lost its slot — ${p.reason}`,

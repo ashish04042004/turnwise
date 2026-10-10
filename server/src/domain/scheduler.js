@@ -31,22 +31,14 @@ export function cloneState(state) {
   };
 }
 
-/** Assigns one distinct free resource to every requirement (small bipartite match). */
-function assignResources(requirements, slot, state, preferred) {
-  const candidatesFor = (cap) =>
-    state.resources
-      .filter((r) => r.active && r.capabilities.includes(cap) && isFree(state.resourceBusy.get(r.id), slot))
-      .sort((a, b) => {
-        const pa = preferred.includes(a.id) ? 0 : 1;
-        const pb = preferred.includes(b.id) ? 0 : 1;
-        return pa - pb || a.name.localeCompare(b.name);
-      })
-      .map((r) => r.id);
-
-  const options = requirements.map(candidatesFor);
+/**
+ * Picks one distinct resource per requirement from per-requirement candidate
+ * lists (in preference order): a small bipartite match. Returns ids or null.
+ */
+export function matchRequirements(options) {
   // Scarcest requirement first keeps backtracking tiny.
-  const order = requirements.map((_, i) => i).sort((a, b) => options[a].length - options[b].length);
-  const chosen = new Array(requirements.length);
+  const order = options.map((_, i) => i).sort((a, b) => options[a].length - options[b].length);
+  const chosen = new Array(options.length);
   const used = new Set();
 
   const solve = (k) => {
@@ -62,6 +54,20 @@ function assignResources(requirements, slot, state, preferred) {
     return false;
   };
   return solve(0) ? chosen : null;
+}
+
+/** Candidate resources for each requirement, preferred ones first. */
+export function candidateOptions(requirements, resources, usable, preferred = []) {
+  return requirements.map((cap) =>
+    resources
+      .filter((r) => r.active && r.capabilities.includes(cap) && usable(r))
+      .sort((a, b) => (preferred.includes(a.id) ? 0 : 1) - (preferred.includes(b.id) ? 0 : 1) || a.name.localeCompare(b.name))
+      .map((r) => r.id),
+  );
+}
+
+function assignResources(requirements, slot, state, preferred) {
+  return matchRequirements(candidateOptions(requirements, state.resources, (r) => isFree(state.resourceBusy.get(r.id), slot), preferred));
 }
 
 /** Explains why a step can never be placed regardless of time. */
