@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { badRequest, HttpError, lockCentrePlanning, notFound, pool, retryOnConflict, withTx } from '../db.js';
+import { badRequest, HttpError, lockCentrePlanning, pool, retryOnConflict, withTx } from '../db.js';
 import { notifyPatient, recordEvent } from '../events.js';
 import { planSteps } from '../domain/scheduler.js';
 import { buildPlannerState, getCentre, loadSnapshot, newVisitSteps } from './context.js';

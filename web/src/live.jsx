@@ -17,18 +17,22 @@ export function LiveProvider({ children }) {
   const [lastEvent, setLastEvent] = useState(null);
   const timer = useRef(null);
 
-  const refresh = useCallback(async () => {
-    try {
-      const b = await api('/board');
-      setTimezone(b.centre.timezone);
-      setBoard(b);
-      setError(null);
-      return b;
-    } catch (err) {
-      setError(err.message);
-      return null;
-    }
-  }, []);
+  const refresh = useCallback(
+    () =>
+      api('/board').then(
+        (b) => {
+          setTimezone(b.centre.timezone);
+          setBoard(b);
+          setError(null);
+          return b;
+        },
+        (err) => {
+          setError(err.message);
+          return null;
+        },
+      ),
+    [],
+  );
 
   const scheduleRefresh = useCallback(() => {
     clearTimeout(timer.current);

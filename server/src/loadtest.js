@@ -117,7 +117,7 @@ async function main() {
       doubleBookings: overlap[0].n,
     };
     console.log(JSON.stringify(report, null, 2));
-    if (overlap[0].n > 0) process.exitCode = 1;
+    if (overlap[0].n > 0 || outcomes.other > 0 || walkFailed > 0) process.exitCode = 1;
   } finally {
     await pool.query('DELETE FROM visits WHERE centre_id = $1', [centre.id]);
     await pool.query('DELETE FROM reservations WHERE centre_id = $1', [centre.id]);
