@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { ROLE_LABEL } from '../auth.jsx';
 import { clock, time } from '../format.js';
 import { useLive } from '../live.jsx';
 
@@ -20,6 +21,15 @@ const DESCRIBE = {
   'step.displaced': (p) => `${p.patient}'s ${p.service} lost its slot — ${p.reason}`,
   'resource.down': (p) => `${p.resource} unavailable until ${time(p.until)}${p.reason ? ` (${p.reason})` : ''}; ${p.displaced} affected`,
   'resource.up': (p) => `${p.resource} back in service`,
+  'staff.added': (p) => `${p.name} added as ${ROLE_LABEL[p.role] ?? p.role}`,
+  'staff.updated': (p) =>
+    p.active === false
+      ? `${p.name} deactivated`
+      : p.active === true
+        ? `${p.name} reactivated`
+        : p.role
+          ? `${p.name} is now ${ROLE_LABEL[p.role] ?? p.role}`
+          : `${p.name}'s ${p.changed.includes('pin') ? 'PIN was reset' : 'details changed'}`,
   'replan.proposed': (p) => `Re-plan proposed: ${p.trigger}`,
   'replan.applied': (p) => `Re-plan applied (${p.option}): ${p.moved} moved, ${p.unschedulable} without slot, decided in ${p.decisionSec}s`,
   'replan.rejected': () => 'Re-plan dismissed',

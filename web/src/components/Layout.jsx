@@ -8,6 +8,7 @@ const NAV = [
   ['/book', 'Book & walk-in', 'frontDesk'],
   ['/analytics', 'Analytics'],
   ['/activity', 'Activity'],
+  ['/staff', 'Staff', 'staff'],
 ];
 
 export default function Layout() {

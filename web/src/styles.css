@@ -244,6 +244,31 @@ a {
 .next-up {
   margin-bottom: 16px;
 }
+.staff-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 960px;
+}
+.staff-table td {
+  vertical-align: middle;
+}
+.staff-table tr.inactive td {
+  color: var(--muted);
+}
+.staff-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.pin-reset {
+  display: flex;
+  gap: 6px;
+}
+.pin-reset input {
+  width: 110px;
+}
 .next-up-list {
   list-style: none;
   margin: 0;

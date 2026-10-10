@@ -34,6 +34,8 @@ Stack: **PERN in plain JavaScript**. That is PostgreSQL, Express 5, React (Vite)
   <img src="docs/floor-technician.png" width="400" alt="Floor as a technician: only floor actions are shown">
 </p>
 
+<p><img src="docs/staff.png" width="640" alt="Staff management for managers"></p>
+
 ![Analytics](docs/analytics.png)
 
 ## Quick start
@@ -52,7 +54,7 @@ Open http://localhost:5173 and sign in with one of the demo staff accounts:
 
 | Person | Role | PIN | Can |
 | --- | --- | --- | --- |
-| Asha Menon | Manager | 1234 | Everything, including the simulator |
+| Asha Menon | Manager | 1234 | Everything, including the simulator and the **Staff** screen (add people, change roles, reset PINs, deactivate) |
 | Ravi Kumar | Front desk | 1111 | Walk-ins, bookings, check-in, cancellations, waitlist, approving re-plans |
 | Farah Khan | Technician | 2222 | Start, complete and extend services; report machines unavailable |
 
@@ -116,7 +118,7 @@ Booking changes, audit events and outbox rows are written in one transaction. A 
 **3. Disruption recovery is a proposal, not a silent rewrite.**
 When capacity disappears, only the bookings that actually conflict are displaced. The planner, a pure list scheduler with backtracking resource assignment, builds options and scores them. The score orders by fewest unschedulable patients, then smallest worst-case delay, then smallest total delay. Options that would strand someone are dropped, and anything that can't be placed today is reported explicitly with a reason. Applying a proposal re-checks step versions and live constraints. A stale proposal is marked stale and regenerated rather than half-applied. Short overruns (below `OVERRUN_GRACE_MIN`, default 5 min) only show up as projected delay, so staff aren't asked to approve noise.
 
-**Who did what is not self-reported.** Staff sign in with a PIN (scrypt-hashed). The server issues an HMAC-signed, HttpOnly, SameSite=Lax session cookie, and the audit actor is taken from that session. A per-person session version is bumped on sign-out, which revokes every outstanding token for that person. Failed sign-ins are rate-limited per client. Every staff request acts on the signer's own centre, and each mutation is gated by role.
+**Who did what is not self-reported.** Staff sign in with a PIN (scrypt-hashed). The server issues an HMAC-signed, HttpOnly, SameSite=Lax session cookie, and the audit actor is taken from that session. A per-person session version is bumped on sign-out, which revokes every outstanding token for that person. Failed sign-ins are rate-limited per client. Every staff request acts on the signer's own centre, and each mutation is gated by role. When a manager changes someone's role, PIN or active status, that person's session version moves on, so they lose access on every device immediately rather than when a token expires. A centre can't be left without an active manager, and managers can't demote or deactivate themselves. Both checks run under a row lock, so two managers can't demote each other at the same moment.
 
 **Live updates survive reconnects.** Events are rows first. A trigger calls `pg_notify`, and the SSE hub forwards it. A reconnecting browser sends `Last-Event-ID` and gets the missed events replayed from the table, or a `reset` if it was gone too long.
 

@@ -9,6 +9,7 @@ import BookPage from './pages/BookPage.jsx';
 import FloorPage from './pages/FloorPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import PatientPage from './pages/PatientPage.jsx';
+import StaffPage from './pages/StaffPage.jsx';
 
 function StaffArea() {
   const { session } = useAuth();
@@ -32,6 +33,7 @@ export default function App() {
             <Route path="book" element={<BookPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="activity" element={<ActivityPage />} />
+            <Route path="staff" element={<StaffPage />} />
           </Route>
         </Routes>
       </AuthProvider>

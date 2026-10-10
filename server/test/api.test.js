@@ -124,6 +124,68 @@ describe('role-based access', () => {
   });
 });
 
+describe('staff management', () => {
+  it('is for managers only', async () => {
+    const reception = await signIn('reception', '1111');
+    expect((await call('/staff', { cookie: reception })).status).toBe(403);
+    expect((await call('/staff', { cookie: reception, body: { name: 'Sneaky', role: 'manager', pin: '1234' } })).status).toBe(403);
+  });
+
+  it('adds a person who can then sign in, and rejects duplicate names', async () => {
+    const manager = await signIn('manager', '3333');
+    const added = await call('/staff', { cookie: manager, body: { name: 'New Hire', role: 'technician', pin: '4444' } });
+    expect(added.status).toBe(201);
+    const { id } = await added.json();
+    expect((await call('/auth/login', { body: { staffId: id, pin: '4444' } })).status).toBe(200);
+    expect((await call('/staff', { cookie: manager, body: { name: 'New Hire', role: 'reception', pin: '5555' } })).status).toBe(409);
+    const list = await (await call('/staff', { cookie: manager })).json();
+    expect(list.staff.map((s) => s.name)).toContain('New Hire');
+    expect(JSON.stringify(list)).not.toMatch(/pin_hash|scrypt/);
+  });
+
+  it('signs a person out everywhere when their role, PIN or status changes', async () => {
+    const manager = await signIn('manager', '3333');
+    const { id } = await (await call('/staff', { cookie: manager, body: { name: 'Temp Cover', role: 'reception', pin: '6666' } })).json();
+    const login = await call('/auth/login', { body: { staffId: id, pin: '6666' } });
+    const theirs = login.headers.getSetCookie()[0].split(';')[0];
+    expect((await call('/board', { cookie: theirs })).status).toBe(200);
+
+    expect((await call(`/staff/${id}`, { cookie: manager, method: 'PATCH', body: { pin: '7777' } })).status).toBe(200);
+    expect((await call('/board', { cookie: theirs })).status).toBe(401);
+    expect((await call('/auth/login', { body: { staffId: id, pin: '6666' } })).status).toBe(401);
+    expect((await call('/auth/login', { body: { staffId: id, pin: '7777' } })).status).toBe(200);
+
+    expect((await call(`/staff/${id}`, { cookie: manager, method: 'PATCH', body: { active: false } })).status).toBe(200);
+    expect((await call('/auth/login', { body: { staffId: id, pin: '7777' } })).status).toBe(401);
+    const picker = await (await call('/auth/staff')).json();
+    expect(picker.staff.some((s) => s.id === id)).toBe(false);
+
+    const events = await (await call('/events?limit=10', { cookie: manager })).json();
+    const updates = events.filter((e) => e.type === 'staff.updated' && e.subject_id === id);
+    expect(updates.length).toBe(2);
+    expect(JSON.stringify(updates)).not.toMatch(/7777/);
+  });
+
+  it('keeps at least one active manager and stops managers locking themselves out', async () => {
+    const manager = await signIn('manager', '3333');
+    expect((await call(`/staff/${staff.manager}`, { cookie: manager, method: 'PATCH', body: { role: 'reception' } })).status).toBe(409);
+    expect((await call(`/staff/${staff.manager}`, { cookie: manager, method: 'PATCH', body: { active: false } })).status).toBe(409);
+
+    // Changing your own PIN keeps you signed in on this device.
+    const own = await call(`/staff/${staff.manager}`, { cookie: manager, method: 'PATCH', body: { pin: '3333' } });
+    expect(own.status).toBe(200);
+    const renewed = own.headers.getSetCookie()[0].split(';')[0];
+    expect((await call('/staff', { cookie: renewed })).status).toBe(200);
+    expect((await call('/staff', { cookie: manager })).status).toBe(401);
+  });
+
+  it('cannot touch staff at another centre', async () => {
+    const manager = await signIn('manager', '3333');
+    const other = (await pool.query(`SELECT id FROM staff WHERE centre_id <> $1 LIMIT 1`, [centreId])).rows[0];
+    if (other) expect((await call(`/staff/${other.id}`, { cookie: manager, method: 'PATCH', body: { active: false } })).status).toBe(404);
+  });
+});
+
 describe('session lifecycle', () => {
   it('revokes the session on sign-out', async () => {
     const cookie = await signIn('manager', '3333');

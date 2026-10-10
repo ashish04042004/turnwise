@@ -11,6 +11,7 @@ export const PERMISSIONS = {
   resources: ['technician', 'manager'],
   replan: ['reception', 'manager'],
   simulate: ['manager'],
+  staff: ['manager'],
 };
 
 export function hashPin(pin) {
@@ -114,6 +115,11 @@ export async function login(req, res, { staffId, pin }) {
   setSessionCookie(res, issueToken(rows[0]), config.sessionHours * 3600);
   const { pin_hash: _hash, session_version: _v, ...staff } = rows[0];
   return staff;
+}
+
+/** Re-issues the caller's own cookie after their session version moved (e.g. they changed their own PIN). */
+export function renewSession(res, staff) {
+  setSessionCookie(res, issueToken(staff), config.sessionHours * 3600);
 }
 
 export async function logout(req, res) {

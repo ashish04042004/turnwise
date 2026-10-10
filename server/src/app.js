@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { z, ZodError } from 'zod';
-import { actorOf, authenticate, listStaff, login, logout, PERMISSIONS, requireRole, requireStaff } from './auth.js';
+import { actorOf, authenticate, listStaff, login, logout, PERMISSIONS, renewSession, requireRole, requireStaff } from './auth.js';
 import { config } from './config.js';
 import { HttpError, pool } from './db.js';
 import { latencyMiddleware, latencySummary } from './latency.js';
@@ -15,14 +15,20 @@ import { getCentre } from './services/context.js';
 import { checkIn, completeStep, extendStep, startStep } from './services/operations.js';
 import { applyProposal, generateProposal, markResourceDown, markResourceUp, rejectProposal } from './services/replan.js';
 import { simBreakdown, simCancel, simOverrun, simTick, simWalkInRush } from './services/simulator.js';
+import { addStaff, listAllStaff, updateStaff } from './services/staff.js';
 import { acceptOffer, addToWaitlist, declineOffer } from './services/waitlist.js';
 
 const uuid = z.string().uuid();
+const pin = z.string().regex(/^\d{4,8}$/, 'PIN must be 4–8 digits');
+const staffName = z.string().trim().min(2).max(60);
+const role = z.enum(['reception', 'technician', 'manager']);
 const patient = z.object({ name: z.string().trim().min(2).max(80), phone: z.string().trim().max(20).optional().nullable() });
 const services = z.array(uuid).min(1).max(8);
 
 const schemas = {
-  login: z.object({ staffId: uuid, pin: z.string().regex(/^\d{4,8}$/, 'PIN must be 4–8 digits') }),
+  login: z.object({ staffId: uuid, pin }),
+  addStaff: z.object({ name: staffName, role, pin }),
+  updateStaff: z.object({ name: staffName.optional(), role: role.optional(), active: z.boolean().optional(), pin: pin.optional() }).strict(),
   search: z.object({ serviceIds: services, from: z.coerce.date().optional() }),
   hold: z.object({
     patient,
@@ -142,6 +148,19 @@ export function createApp() {
   api.post('/proposals/:id/reject', replan, async (req, res) => {
     await rejectProposal(await centreOf(req), uuid.parse(req.params.id), actorOf(req));
     res.json({ ok: true });
+  });
+
+  const manageStaff = requireRole(PERMISSIONS.staff);
+  api.get('/staff', manageStaff, async (req, res) => res.json({ staff: await listAllStaff(req.staff.centre_id) }));
+  api.post('/staff', manageStaff, async (req, res) => res.status(201).json(await addStaff(req.staff.centre_id, schemas.addStaff.parse(req.body), actorOf(req))));
+  api.patch('/staff/:id', manageStaff, async (req, res) => {
+    const id = uuid.parse(req.params.id);
+    const { centre_id: _c, session_version: version, ...updated } = await updateStaff(req.staff.centre_id, id, schemas.updateStaff.parse(req.body), {
+      actor: actorOf(req),
+      selfId: req.staff.id,
+    });
+    if (id === req.staff.id) renewSession(res, { id, session_version: version });
+    res.json(updated);
   });
 
   if (config.enableSimulator) {
