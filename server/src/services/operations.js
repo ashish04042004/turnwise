@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import { conflict, isExclusionViolation, notFound, pool, withTx } from '../db.js';
+import { conflict, isCapacityConflict, notFound, pool, withTx } from '../db.js';
 import { candidateOptions, matchRequirements } from '../domain/scheduler.js';
 import { recordEvent } from '../events.js';
 import { getCentre, loadSnapshot } from './context.js';
@@ -175,7 +175,7 @@ export async function startStep(centre, stepId, { force = false } = {}, actor) {
       return { s, displaced, swapped, lateMin };
     });
   } catch (err) {
-    if (isExclusionViolation(err)) throw conflict('That resource was just taken; refresh and try again');
+    if (isCapacityConflict(err)) throw conflict('That resource was just taken; refresh and try again');
     throw err;
   }
   const proposalId = await proposeIfDisplaced(

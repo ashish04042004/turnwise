@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { conflict, HttpError, isExclusionViolation, lockCentrePlanning, notFound, pool, retryOnConflict, withTx } from '../db.js';
+import { conflict, HttpError, isCapacityConflict, lockCentrePlanning, notFound, pool, retryOnConflict, withTx } from '../db.js';
 import { enqueueOutbox, notifyPatient, recordEvent } from '../events.js';
 import { planSteps } from '../domain/scheduler.js';
 import { buildPlannerState, loadSnapshot, newVisitSteps } from './context.js';
@@ -145,7 +145,7 @@ export async function createHold(centre, input, actor) {
       return { visitId, publicToken: public_token, holdExpiresAt: expiresAt.toISOString(), steps: describePlacements(snap, plan.placements, steps) };
     });
   } catch (err) {
-    if (isExclusionViolation(err)) throw conflict('That slot was just taken by another booking');
+    if (isCapacityConflict(err)) throw conflict('That slot was just taken by another booking');
     throw err;
   }
 }

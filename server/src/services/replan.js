@@ -1,4 +1,4 @@
-import { badRequest, conflict, isExclusionViolation, lockCentrePlanning, notFound, pool, withTx } from '../db.js';
+import { badRequest, conflict, isCapacityConflict, lockCentrePlanning, notFound, pool, withTx } from '../db.js';
 import { notifyPatient, recordEvent } from '../events.js';
 import { planSteps } from '../domain/scheduler.js';
 import { buildPlannerState, loadSnapshot, toPlannerStep } from './context.js';
@@ -268,7 +268,7 @@ export async function applyProposal(centre, proposalId, optionKey, actor) {
       return { applied: option.moves.length, unschedulable: option.unschedulable };
     });
   } catch (err) {
-    if (err instanceof StaleProposalError || isExclusionViolation(err)) {
+    if (err instanceof StaleProposalError || isCapacityConflict(err)) {
       await pool.query(`UPDATE replan_proposals SET status = 'stale', decided_at = now() WHERE id = $1 AND status = 'pending'`, [proposalId]);
       const fresh = await generateProposal(centre, 'Previous proposal went stale', actor);
       throw conflict('The centre changed since this plan was computed. A fresh proposal is ready.', { proposalId: fresh?.id ?? null });

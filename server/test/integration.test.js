@@ -4,7 +4,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { config } from '../src/config.js';
-import { pool } from '../src/db.js';
+import { isCapacityConflict, pool } from '../src/db.js';
 import { enqueueOutbox } from '../src/events.js';
 import { migrate } from '../src/migrate.js';
 import { confirmHold, createHold, createWalkIn } from '../src/services/booking.js';
@@ -108,8 +108,10 @@ describe('correctness under concurrency', () => {
         ),
       ),
     );
+    // Losers see either the exclusion violation or, when their inserts collided mid-flight, a deadlock abort.
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-    expect(results.filter((r) => r.status === 'rejected').every((r) => r.reason.code === '23P01')).toBe(true);
+    expect(results.filter((r) => r.status === 'rejected').every((r) => isCapacityConflict(r.reason))).toBe(true);
+    expect(await overlappingActiveReservations()).toBe(0);
   });
 
   it('places 12 simultaneous walk-ins on one machine without any overlap', async () => {

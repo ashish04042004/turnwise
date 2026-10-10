@@ -30,9 +30,14 @@ export async function lockCentrePlanning(tx, centreId) {
   await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`plan:${centreId}`]);
 }
 
-/** SQLSTATE 23P01: an exclusion constraint rejected an overlapping reservation. */
-export function isExclusionViolation(err) {
-  return err?.code === '23P01';
+/**
+ * This transaction lost a race for capacity: an exclusion constraint rejected
+ * an overlap (23P01), or concurrent conflicting inserts deadlocked on the
+ * exclusion index (40P01), or a serialization failure (40001). In every case
+ * nothing was committed and the operation can be re-planned.
+ */
+export function isCapacityConflict(err) {
+  return ['23P01', '40P01', '40001'].includes(err?.code);
 }
 
 export class HttpError extends Error {
@@ -58,7 +63,7 @@ export async function retryOnConflict(fn, attempts = 4) {
     try {
       return await fn();
     } catch (err) {
-      if (!isExclusionViolation(err)) throw err;
+      if (!isCapacityConflict(err)) throw err;
       lastErr = err;
       await new Promise((r) => setTimeout(r, 5 + Math.random() * 20 * (i + 1)));
     }
