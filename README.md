@@ -28,6 +28,11 @@ Stack: **PERN in plain JavaScript**. That is PostgreSQL, Express 5, React (Vite)
   <img src="docs/book.png" width="560" alt="Booking and walk-ins">
 </p>
 
+<p>
+  <img src="docs/login.png" width="420" alt="Staff sign-in">
+  <img src="docs/floor-technician.png" width="400" alt="Floor as a technician: only floor actions are shown">
+</p>
+
 ![Analytics](docs/analytics.png)
 
 ## Quick start
@@ -42,17 +47,26 @@ npm run setup         # migrate + seed a synthetic Noida centre
 npm run dev           # API :4100, worker, web :5173
 ```
 
-Open http://localhost:5173. For a production-style run, use `npm run build`, then `npm start` and `npm run start:worker`. The API serves the built UI at http://localhost:4100.
+Open http://localhost:5173 and sign in with one of the demo staff accounts:
+
+| Person | Role | PIN | Can |
+| --- | --- | --- | --- |
+| Asha Menon | Manager | 1234 | Everything, including the simulator |
+| Ravi Kumar | Front desk | 1111 | Walk-ins, bookings, check-in, cancellations, waitlist, approving re-plans |
+| Farah Khan | Technician | 2222 | Start, complete and extend services; report machines unavailable |
+
+Everyone can see the floor, analytics and activity. For a production-style run, use `npm run build`, then `npm start` and `npm run start:worker` with `NODE_ENV=production` and a `SESSION_SECRET`. The API serves the built UI at http://localhost:4100.
 
 | Command | Purpose |
 | --- | --- |
-| `npm test` | Planner, projection and Postgres integration tests (Vitest) |
+| `npm test` | Planner, projection, comparison, Postgres integration and HTTP auth tests (Vitest) |
+| `npm run lint` | ESLint over server and web |
 | `npm run loadtest` | Concurrency stress test against an isolated temporary centre |
 | `npm run seed` | Reset to a fresh synthetic day (148-ish visits, 12 resources, 11 services) |
 
 ### Five-minute demo
 
-1. **Floor**: in *Simulate a morning*, turn on **Floor autopilot**. Patients arrive, start and finish, and the timeline and estimates move live.
+1. **Floor**: sign in as Asha (manager). In *Simulate a morning*, turn on **Floor autopilot**. Patients arrive, start and finish, and the timeline and estimates move live.
 2. Click **Ultrasound breaks down**. The busiest ultrasound room goes down for 30 minutes. Affected bookings are flagged and a re-plan proposal appears with the cost of each option. Apply it, and the patient's link updates to the new time.
 3. Click **Walk-in rush**. Three walk-ins arrive concurrently and each is fitted into a real gap.
 4. Click **Patient cancels**, then look at **Book & walk-in → Waitlist**. A compatible waitlisted patient receives a time-limited offer.
@@ -84,13 +98,15 @@ web/src/                    React dashboard, booking, analytics, activity, patie
 ## Design decisions worth defending
 
 **1. Double-booking is impossible at the database level, not just unlikely.**
-Every reservation is a `tstzrange` on a resource. A GiST exclusion constraint rejects any two *active* reservations (held, confirmed or in use) that overlap on the same resource. A second constraint stops one visit's steps from overlapping, so a patient can't be in two rooms at once. Planning is serialised per centre with a transaction-scoped advisory lock to keep contention cheap, but correctness never depends on it. If the lock is bypassed, the constraint still wins, and a 23P01 violation becomes a clean 409 or a bounded retry. Redis is never consulted for booking truth.
+Every reservation is a `tstzrange` on a resource. A GiST exclusion constraint rejects any two *active* reservations (held, confirmed or in use) that overlap on the same resource. A second constraint stops one visit's steps from overlapping, so a patient can't be in two rooms at once. Planning is serialised per centre with a transaction-scoped advisory lock to keep contention cheap, but correctness never depends on it. If the lock is bypassed, the constraint still wins. The loser gets either a 23P01 violation or, when conflicting inserts collide mid-flight, a 40P01 deadlock abort on the exclusion index. Both become a clean 409 or a bounded retry. Redis is never consulted for booking truth.
 
 **2. Side effects are durable before they happen.**
 Booking changes, audit events and outbox rows are written in one transaction. A relay moves outbox rows into BullMQ with deterministic job ids (5 attempts, exponential backoff). Notification delivery is idempotent through a unique `outbox_id`, so a retry after a crash can't text a patient twice. Capacity recovery marks its outbox row delivered *inside* the transaction that makes the offer. Failed deliveries are visible in Analytics. Delivery fails randomly 15% of the time by default (`NOTIFY_FAILURE_RATE`) so the retry path is exercised all the time.
 
 **3. Disruption recovery is a proposal, not a silent rewrite.**
 When capacity disappears, only the bookings that actually conflict are displaced. The planner, a pure list scheduler with backtracking resource assignment, builds options and scores them. The score orders by fewest unschedulable patients, then smallest worst-case delay, then smallest total delay. Options that would strand someone are dropped, and anything that can't be placed today is reported explicitly with a reason. Applying a proposal re-checks step versions and live constraints. A stale proposal is marked stale and regenerated rather than half-applied. Short overruns (below `OVERRUN_GRACE_MIN`, default 5 min) only show up as projected delay, so staff aren't asked to approve noise.
+
+**Who did what is not self-reported.** Staff sign in with a PIN (scrypt-hashed). The server issues an HMAC-signed, HttpOnly, SameSite=Lax session cookie, and the audit actor is taken from that session. A per-person session version is bumped on sign-out, which revokes every outstanding token for that person. Failed sign-ins are rate-limited per client. Every staff request acts on the signer's own centre, and each mutation is gated by role.
 
 **Live updates survive reconnects.** Events are rows first. A trigger calls `pg_notify`, and the SSE hub forwards it. A reconnecting browser sends `Last-Event-ID` and gets the missed events replayed from the table, or a `reset` if it was gone too long.
 
@@ -132,7 +148,7 @@ On the seeded synthetic day, estimate error is around 4 min p50 and 6 min p90. T
 ## Limitations and next steps
 
 - Single centre, single day horizon. Planning is greedy list scheduling with local backtracking, not a global optimiser.
-- No authentication or roles yet. The actor comes from an `x-actor` header for the audit trail.
+- Sign-in is PIN-based for a shared front-desk terminal, and the rate limiter is in-memory per API process. A multi-site deployment would want SSO, a shared limiter, and staff management screens (staff are created by the seed today).
 - Notifications are simulated. In production an SMS/WhatsApp provider would sit behind the same outbox.
 - Clinical priority is a staff decision. Turnwise orders by the priority staff set and never infers it.
 
