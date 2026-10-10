@@ -11,6 +11,7 @@ services:
     name: turnwise
     runtime: docker
     plan: free
+    region: singapore
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
@@ -41,6 +42,7 @@ services:
   - type: keyvalue
     name: turnwise-kv
     plan: free
+    region: singapore
     # BullMQ needs keys to stay until they expire or are removed.
     maxmemoryPolicy: noeviction
     ipAllowList: []
@@ -48,6 +50,7 @@ services:
 databases:
   - name: turnwise-db
     plan: free
+    region: singapore
     databaseName: turnwise
     user: turnwise
     # Reachable only from services in this Render account.
