@@ -18,11 +18,13 @@
     "lint": "eslint .",
     "loadtest": "npm run loadtest -w server --",
     "build": "npm run build -w web",
+    "e2e": "playwright test",
     "start": "npm start -w server",
     "start:worker": "npm run start:worker -w server"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.0",
     "concurrently": "^9.1.2",
     "eslint": "^10.12.0",
     "eslint-plugin-react-hooks": "^7.1.1",

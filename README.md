@@ -74,6 +74,7 @@ This starts Postgres, Redis, a one-shot `migrate` job, the API (which also serve
 | `npm test` | Planner, projection, comparison, Postgres integration and HTTP auth tests (Vitest) |
 | `npm run lint` | ESLint over server and web |
 | `npm run loadtest` | Concurrency stress test against an isolated temporary centre |
+| `npm run e2e` | Browser smoke test (Playwright) against the built app and seeded demo centre: front desk adds a walk-in, a technician starts and completes it, roles are enforced. Run `npm run build` and `npm run seed` first. Set `E2E_CHANNEL=msedge` or `chrome` to use an installed browser. |
 | `npm run seed` | Reset to a fresh synthetic day (148-ish visits, 12 resources, 11 services) |
 
 ### Five-minute demo

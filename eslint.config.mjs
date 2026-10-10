@@ -3,7 +3,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 
 export default [
-  { ignores: ['**/node_modules/**', '**/dist/**', 'docs/**'] },
+  { ignores: ['**/node_modules/**', '**/dist/**', 'docs/**', 'test-results/**', 'playwright-report/**'] },
   js.configs.recommended,
   {
     rules: {
@@ -13,7 +13,7 @@ export default [
     },
   },
   {
-    files: ['server/**/*.js', '*.{js,mjs}'],
+    files: ['server/**/*.js', 'e2e/**/*.mjs', '*.{js,mjs}'],
     languageOptions: { globals: globals.node },
   },
   {
