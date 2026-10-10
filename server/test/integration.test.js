@@ -3,11 +3,13 @@
  * centre that is deleted afterwards (the demo centre is untouched).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { config } from '../src/config.js';
 import { pool } from '../src/db.js';
 import { enqueueOutbox } from '../src/events.js';
 import { migrate } from '../src/migrate.js';
 import { confirmHold, createHold, createWalkIn } from '../src/services/booking.js';
 import { getCentre } from '../src/services/context.js';
+import { completeStep, startStep, sweepOverruns } from '../src/services/operations.js';
 import { applyProposal, generateProposal, markResourceDown } from '../src/services/replan.js';
 
 const MIN = 60_000;
@@ -171,6 +173,42 @@ describe('disruption recovery', () => {
     expect(option.moves).toEqual([]);
     expect(option.unschedulable[0].reason).toMatch(/radiologist/);
     await pool.query('UPDATE resources SET active = true WHERE id = $1', [res.drX]);
+  });
+
+  it('keeps the cause of a superseded proposal in its replacement', async () => {
+    const next = await generateProposal(centre, 'radiologist back on shift', 'test');
+    expect(next.trigger).toContain('radiologist unavailable');
+    expect(next.trigger).toContain('radiologist back on shift');
+    const { rows } = await pool.query(`SELECT count(*)::int AS n FROM replan_proposals WHERE centre_id = $1 AND status = 'pending'`, [centre.id]);
+    expect(rows[0].n).toBe(1);
+  });
+});
+
+describe('overrun sweeper', () => {
+  async function runningStepEndingAgo(minutesAgo) {
+    const walkIn = await createWalkIn(centre, { patient: { name: `Overrun ${minutesAgo}` }, serviceIds: [svc.SOLO] }, 'test');
+    const stepId = walkIn.steps[0].stepId;
+    await startStep(centre, stepId, { force: true }, 'test');
+    const range = `tstzrange(now() - interval '30 minutes', now() - make_interval(mins => ${minutesAgo}), '[)')`;
+    await pool.query(`UPDATE reservations SET during = ${range} WHERE step_id = $1 AND status = 'in_use'`, [stepId]);
+    await pool.query(`UPDATE visit_steps SET planned = ${range}, actual_start = now() - interval '30 minutes' WHERE id = $1`, [stepId]);
+    return stepId;
+  }
+
+  const plannedEnd = async (stepId) => (await pool.query('SELECT upper(planned) AS e, now() AS now FROM visit_steps WHERE id = $1', [stepId])).rows[0];
+
+  it('leaves short overruns to the projection and extends long ones', async () => {
+    const shortRun = await runningStepEndingAgo(2);
+    expect(await sweepOverruns(centre.id)).toBe(0);
+    const before = await plannedEnd(shortRun);
+    expect(before.e < before.now).toBe(true);
+    await completeStep(centre, shortRun, 'test');
+
+    const longRun = await runningStepEndingAgo(config.overrunGraceMin + 1);
+    expect(await sweepOverruns(centre.id)).toBe(1);
+    const after = await plannedEnd(longRun);
+    expect(after.e > after.now).toBe(true);
+    await completeStep(centre, longRun, 'test');
   });
 });
 
