@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import BaselinePanel from '../components/BaselinePanel.jsx';
 import { time } from '../format.js';
 import { useLive } from '../live.jsx';
 
@@ -62,6 +63,8 @@ export default function AnalyticsPage() {
       </div>
 
       <div className="analytics-grid">
+        <BaselinePanel />
+
         <section className="panel">
           <h2>Waiting time distribution</h2>
           <Bars data={a.waits.histogram} />

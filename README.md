@@ -17,6 +17,8 @@ Stack: **PERN in plain JavaScript**. That is PostgreSQL, Express 5, React (Vite)
 | Holds | Receptionists get a short hold while the patient confirms. Expired holds release capacity automatically. |
 | Live estimates | Delays propagate through each resource's queue. Waits are shown as a range calibrated by the centre's own recent estimate error. |
 | Disruptions | Downtime, overruns and late starts displace only the bookings they actually break. A re-plan proposal offers options ("move only affected patients" vs "keep queue order") with their cost in delay. Nothing changes until staff apply it, and it is re-validated against live capacity at that moment. |
+| Late resource binding | When staff start a service and the booked machine, room or person is busy (an overrun, an outage), Turnwise swaps in an interchangeable one that is free for the whole service instead of making the patient wait. |
+| Baseline comparison | Analytics replays today's demand through a paper-token "department queue" system with identical service durations, so the effect of the policy is measured, not asserted. |
 | Capacity recovery | Cancellations and no-shows release capacity. A worker offers the slot to a compatible waitlisted patient with a time-limited link. |
 | Patient view | A token link shows the next test, a wait range and any pending offer. It updates live. |
 | Analytics | Wait p50/p90, utilisation, estimate error, disruption counts, cancellation → rebooked time, delivery reliability and API latency. All of it is computed from recorded events. |
@@ -71,7 +73,7 @@ BullMQ worker ── expire holds · relay outbox → notifications / capacity r
 ```
 server/
   migrations/001_init.sql   schema, exclusion constraints, notify trigger
-  src/domain/               pure planner + delay projection (no I/O, unit tested)
+  src/domain/               pure planner, delay projection and policy comparison (no I/O, unit tested)
   src/services/             booking, operations, replan, waitlist, board, analytics, simulator
   src/live.js               SSE hub with Last-Event-ID replay
   src/worker.js             BullMQ workers and repeatable jobs
@@ -105,6 +107,25 @@ From `npm run loadtest` on a laptop (Windows, Dockerised Postgres 16). 50 client
 | Throughput | ~64 holds/s |
 
 These latencies are dominated by queueing behind the per-centre planning lock under deliberately extreme contention, with 50 simultaneous writers to one centre. Under normal use the API latency panel shows board reads around 60 ms p50 and mutations in the tens of milliseconds.
+
+### Turnwise vs department queues
+
+`GET /api/analytics/baseline` (and the top panel on Analytics) replays today's patients through two policies with identical arrivals, tests and service durations (8 seeded duration draws). Waiting excludes clinically required gaps, such as 120 min between fasting and post-prandial sugar. On the seeded day (124 visits):
+
+| Metric (lower is better) | Department queues | Turnwise |
+| --- | --- | --- |
+| Median wait, everyone | 4.8 min | 2.3 min |
+| 90th percentile wait, everyone | 29.8 min | 22.5 min |
+| 90th percentile wait, appointments | 28.8 min | 17.2 min |
+| 90th percentile wait, walk-ins | 30.5 min | **46.8 min** |
+| Patients waiting over 30 min | 9.8% | 6.4% |
+
+Two findings came out of building this:
+
+- **Rigid timetables lose.** The first version, which made staff follow the plan to the minute, was *worse* than paper tokens. The gain comes from using the plan as a priority order while staff start whoever is present and ready.
+- **Late binding is the biggest lever.** Without it, Turnwise's median wait is 6.6 vs 4.8 min (better in only 2 of 8 draws). With it, the median is 2.3 vs 4.8 min, and Turnwise is better in all 8 draws. That result is why late binding is in the product, not just the model.
+
+The cost is visible too. Reserving capacity for appointments pushes the slowest walk-ins later. A centre that cares more about walk-ins could hold back buffer capacity; this is a policy choice the comparison makes measurable.
 
 On the seeded synthetic day, estimate error is around 4 min p50 and 6 min p90. These figures come from synthetic durations, so they show the measurement pipeline works rather than real-world accuracy. Stage 4 of the plan (a controlled pilot against a baseline) is what would make them meaningful.
 

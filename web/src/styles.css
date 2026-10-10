@@ -1123,6 +1123,34 @@ legend {
 .analytics-grid h2 {
   margin-bottom: 10px;
 }
+.panel.wide {
+  grid-column: 1 / -1;
+}
+.compare-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+table.compare td:nth-child(n + 2),
+table.compare th:nth-child(n + 2) {
+  text-align: right;
+}
+table.compare td.delta.better {
+  color: var(--green);
+  font-weight: 600;
+}
+table.compare td.delta.worse {
+  color: var(--red);
+  font-weight: 600;
+}
+table.compare tr.group td {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-top: 10px;
+}
 .bars {
   display: flex;
   align-items: flex-end;

@@ -7,6 +7,7 @@ import { HttpError, pool } from './db.js';
 import { latencyMiddleware, latencySummary } from './latency.js';
 import { liveClientCount, streamHandler } from './live.js';
 import { getAnalytics, getEvents } from './services/analytics.js';
+import { getBaselineComparison } from './services/comparison.js';
 import { getBoard, getPatientView } from './services/board.js';
 import { confirmHold, createHold, createWalkIn, releaseVisit, searchSlots } from './services/booking.js';
 import { getCentre } from './services/context.js';
@@ -107,6 +108,7 @@ export function createApp() {
   api.post('/waitlist', async (req, res) => res.status(201).json(await addToWaitlist(await centre(), schemas.waitlist.parse(req.body), actor(req))));
 
   api.get('/analytics', async (_req, res) => res.json(await getAnalytics()));
+  api.get('/analytics/baseline', async (_req, res) => res.json(await getBaselineComparison()));
   api.get('/events', async (req, res) => {
     const limit = z.coerce.number().int().min(1).max(500).optional().parse(req.query.limit);
     const before = z.coerce.number().int().optional().parse(req.query.before);
