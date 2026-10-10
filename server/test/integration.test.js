@@ -3,13 +3,14 @@
  * centre that is deleted afterwards (the demo centre is untouched).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { config } from '../src/config.js';
+import { closeCache } from '../src/cache.js';
 import { isCapacityConflict, pool } from '../src/db.js';
 import { enqueueOutbox } from '../src/events.js';
 import { migrate } from '../src/migrate.js';
 import { confirmHold, createHold, createWalkIn } from '../src/services/booking.js';
 import { getCentre } from '../src/services/context.js';
 import { completeStep, startStep, sweepOverruns } from '../src/services/operations.js';
+import { provisionCentre } from '../src/services/provisioning.js';
 import { applyProposal, generateProposal, markResourceDown } from '../src/services/replan.js';
 
 const MIN = 60_000;
@@ -42,37 +43,32 @@ function midMorningZone() {
   return offset >= 0 ? `Etc/GMT-${offset}` : `Etc/GMT+${-offset}`;
 }
 
+const RESOURCES = {
+  solo: { name: 'Solo Analyser', capabilities: ['solo'] },
+  queue: { name: 'Queue Analyser', capabilities: ['queue'] },
+  usgA: { name: 'USG A', capabilities: ['ultrasound'] },
+  usgB: { name: 'USG B', capabilities: ['ultrasound'] },
+  drX: { name: 'Dr X', capabilities: ['radiologist'] },
+};
+
 beforeAll(async () => {
   await migrate();
-  const { rows } = await pool.query(
-    `INSERT INTO centres (name, city, timezone, opens_at, closes_at, hold_ttl_seconds)
-     VALUES ('Integration Test Centre', 'Test', $1, '07:00', '23:00', 1) RETURNING id`,
-    [midMorningZone()],
-  );
-  centre = await getCentre(pool, rows[0].id);
-  for (const [key, name, caps] of [
-    ['solo', 'Solo Analyser', ['solo']],
-    ['queue', 'Queue Analyser', ['queue']],
-    ['usgA', 'USG A', ['ultrasound']],
-    ['usgB', 'USG B', ['ultrasound']],
-    ['drX', 'Dr X', ['radiologist']],
-  ]) {
-    res[key] = (await pool.query(`INSERT INTO resources (centre_id, name, kind, capabilities) VALUES ($1, $2, 'equipment', $3) RETURNING id`, [centre.id, name, caps])).rows[0].id;
-  }
-  for (const [key, duration, reqs] of [
-    ['SOLO', 10, ['solo']],
-    ['QUEUE', 10, ['queue']],
-    ['USG', 20, ['ultrasound', 'radiologist']],
-  ]) {
-    svc[key] = (
-      await pool.query(`INSERT INTO services (centre_id, code, name, category, duration_min, requirements) VALUES ($1, $2, $2, 'test', $3, $4) RETURNING id`, [
-        centre.id,
-        key,
-        duration,
-        reqs,
-      ])
-    ).rows[0].id;
-  }
+  const provisioned = await provisionCentre(pool, {
+    name: 'Integration Test Centre',
+    city: 'Test',
+    timezone: midMorningZone(),
+    hours: { opens: '07:00', closes: '23:00' },
+    holdTtlSeconds: 1,
+    resources: Object.values(RESOURCES).map((r) => ({ ...r, kind: 'equipment' })),
+    services: [
+      { code: 'SOLO', name: 'SOLO', category: 'test', durationMin: 10, requirements: ['solo'] },
+      { code: 'QUEUE', name: 'QUEUE', category: 'test', durationMin: 10, requirements: ['queue'] },
+      { code: 'USG', name: 'USG', category: 'test', durationMin: 20, requirements: ['ultrasound', 'radiologist'] },
+    ],
+  });
+  centre = await getCentre(provisioned.centre.id);
+  for (const [key, r] of Object.entries(RESOURCES)) res[key] = provisioned.resources.find((x) => x.name === r.name).id;
+  for (const [code, s] of provisioned.services) svc[code] = s.id;
 });
 
 afterAll(async () => {
@@ -81,6 +77,7 @@ afterAll(async () => {
     await pool.query('DELETE FROM reservations WHERE centre_id = $1', [centre.id]);
     await pool.query('DELETE FROM centres WHERE id = $1', [centre.id]);
   }
+  await closeCache();
   await pool.end();
 });
 
@@ -258,7 +255,7 @@ describe('overrun sweeper', () => {
     expect(before.e < before.now).toBe(true);
     await completeStep(centre, shortRun, 'test');
 
-    const longRun = await runningStepEndingAgo(config.overrunGraceMin + 1);
+    const longRun = await runningStepEndingAgo(centre.settings.overrun_grace_min + 1);
     expect(await sweepOverruns(centre.id)).toBe(1);
     const after = await plannedEnd(longRun);
     expect(after.e > after.now).toBe(true);

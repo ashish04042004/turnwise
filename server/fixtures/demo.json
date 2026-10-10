@@ -1,0 +1,224 @@
+{
+  "$comment": "Synthetic demo data only: invented centres, staff and patients. Loaded by `npm run seed` (SEED_FIXTURE to use another file).",
+  "syntheticNames": {
+    "first": ["Aarav", "Ananya", "Rohan", "Priya", "Vikram", "Neha", "Arjun", "Kavya", "Rahul", "Isha", "Sanjay", "Pooja", "Amit", "Sneha", "Karan", "Meera", "Deepak", "Ritu", "Nikhil", "Divya", "Suresh", "Anjali", "Manoj", "Tanvi"],
+    "last": ["Sharma", "Verma", "Gupta", "Singh", "Agarwal", "Mehta", "Kapoor", "Jain", "Malhotra", "Bansal", "Chauhan", "Yadav", "Saxena", "Arora", "Bhatia", "Mishra"]
+  },
+  "centres": [
+    {
+      "name": "Sector 18 Diagnostics",
+      "city": "Noida",
+      "timezone": "Asia/Kolkata",
+      "locale": "en-IN",
+      "hours": { "opens": "07:00", "closes": "21:00" },
+      "holdTtlSeconds": 120,
+      "offerTtlSeconds": 600,
+      "offerLeadMinutes": 20,
+      "categories": [
+        { "code": "pathology", "name": "Pathology", "sortOrder": 1 },
+        { "code": "cardiology", "name": "Cardiology", "sortOrder": 2 },
+        { "code": "imaging", "name": "Imaging", "sortOrder": 3 }
+      ],
+      "capabilities": [
+        { "code": "blood_collection", "name": "Blood collection bay" },
+        { "code": "phlebotomist", "name": "Phlebotomist" },
+        { "code": "ecg", "name": "ECG machine" },
+        { "code": "ecg_tech", "name": "Cardiac technician" },
+        { "code": "ultrasound", "name": "Ultrasound room" },
+        { "code": "radiologist", "name": "Radiologist" },
+        { "code": "xray", "name": "X-ray unit" },
+        { "code": "radiographer", "name": "Radiographer" }
+      ],
+      "resources": [
+        { "name": "Collection Bay 1", "kind": "room", "capabilities": ["blood_collection"] },
+        { "name": "Collection Bay 2", "kind": "room", "capabilities": ["blood_collection"] },
+        { "name": "Ritu (Phlebotomist)", "kind": "staff", "capabilities": ["phlebotomist"] },
+        { "name": "Imran (Phlebotomist)", "kind": "staff", "capabilities": ["phlebotomist"] },
+        { "name": "ECG Machine", "kind": "equipment", "capabilities": ["ecg"] },
+        { "name": "Meena (Cardiac Tech)", "kind": "staff", "capabilities": ["ecg_tech"] },
+        { "name": "USG Room 1", "kind": "equipment", "capabilities": ["ultrasound"] },
+        { "name": "USG Room 2", "kind": "equipment", "capabilities": ["ultrasound"] },
+        { "name": "Dr. Kapoor (Radiologist)", "kind": "staff", "capabilities": ["radiologist"] },
+        { "name": "Dr. Iyer (Radiologist)", "kind": "staff", "capabilities": ["radiologist"] },
+        { "name": "X-Ray Unit", "kind": "equipment", "capabilities": ["xray"] },
+        { "name": "Sunil (Radiographer)", "kind": "staff", "capabilities": ["radiographer"] }
+      ],
+      "services": [
+        { "code": "CBC", "name": "Complete blood count", "category": "pathology", "durationMin": 10, "requirements": ["blood_collection", "phlebotomist"] },
+        { "code": "LFT", "name": "Liver function test", "category": "pathology", "durationMin": 10, "requirements": ["blood_collection", "phlebotomist"] },
+        { "code": "LIPID", "name": "Lipid profile", "category": "pathology", "durationMin": 10, "requirements": ["blood_collection", "phlebotomist"] },
+        { "code": "TSH", "name": "Thyroid stimulating hormone", "category": "pathology", "durationMin": 10, "requirements": ["blood_collection", "phlebotomist"] },
+        { "code": "HBA1C", "name": "HbA1c", "category": "pathology", "durationMin": 5, "requirements": ["blood_collection", "phlebotomist"] },
+        { "code": "FBS", "name": "Fasting blood sugar", "category": "pathology", "durationMin": 5, "requirements": ["blood_collection", "phlebotomist"] },
+        { "code": "PPBS", "name": "Post-prandial blood sugar", "category": "pathology", "durationMin": 5, "requirements": ["blood_collection", "phlebotomist"] },
+        { "code": "ECG", "name": "Electrocardiogram", "category": "cardiology", "durationMin": 15, "requirements": ["ecg", "ecg_tech"] },
+        { "code": "USG_ABD", "name": "Ultrasound — whole abdomen", "category": "imaging", "durationMin": 20, "requirements": ["ultrasound", "radiologist"] },
+        { "code": "USG_PELVIS", "name": "Ultrasound — pelvis", "category": "imaging", "durationMin": 20, "requirements": ["ultrasound", "radiologist"] },
+        { "code": "XRAY_CHEST", "name": "Chest X-ray", "category": "imaging", "durationMin": 10, "requirements": ["xray", "radiographer"] }
+      ],
+      "prerequisites": [{ "service": "PPBS", "requires": "FBS", "minGapMin": 120 }],
+      "staff": [
+        { "name": "Asha Menon", "role": "manager", "pin": "1234" },
+        { "name": "Ravi Kumar", "role": "reception", "pin": "1111" },
+        { "name": "Farah Khan", "role": "technician", "pin": "2222" }
+      ],
+      "priorityLevels": [
+        { "level": 0, "label": "Standard" },
+        { "level": 3, "label": "Elevated", "description": "Elderly, pregnant or unwell while waiting" },
+        { "level": 7, "label": "Urgent", "description": "Doctor asked for results today" }
+      ],
+      "settings": {
+        "demo_sign_in_hint": "Demo PINs — Asha Menon (manager) 1234 · Ravi Kumar (front desk) 1111 · Farah Khan (technician) 2222",
+        "sim_breakdown_capability": "ultrasound",
+        "sim_breakdown_reason": "Probe fault — service engineer called",
+        "sim_focus_category": "imaging"
+      },
+      "demand": {
+        "appointment": [
+          { "weight": 14, "services": ["CBC"] },
+          { "weight": 10, "services": ["CBC", "LFT", "LIPID"] },
+          { "weight": 6, "services": ["FBS", "PPBS"] },
+          { "weight": 13, "services": ["USG_ABD"] },
+          { "weight": 7, "services": ["USG_PELVIS"] },
+          { "weight": 10, "services": ["ECG"] },
+          { "weight": 8, "services": ["ECG", "CBC"] },
+          { "weight": 10, "services": ["XRAY_CHEST"] },
+          { "weight": 8, "services": ["USG_ABD", "CBC", "LFT"] },
+          { "weight": 14, "services": ["TSH", "HBA1C"] }
+        ],
+        "walk_in": [
+          { "weight": 1, "services": ["CBC"] },
+          { "weight": 1, "services": ["CBC", "LFT"] },
+          { "weight": 1, "services": ["FBS", "LIPID"] },
+          { "weight": 1, "services": ["ECG"] },
+          { "weight": 1, "services": ["CBC", "ECG"] },
+          { "weight": 1, "services": ["XRAY_CHEST"] },
+          { "weight": 1, "services": ["TSH", "CBC"] },
+          { "weight": 1, "services": ["USG_ABD"] }
+        ],
+        "waitlist": [
+          { "weight": 1, "services": ["USG_ABD"] },
+          { "weight": 1, "services": ["ECG"] },
+          { "weight": 1, "services": ["CBC", "LFT"] },
+          { "weight": 1, "services": ["USG_PELVIS"] }
+        ]
+      },
+      "activity": {
+        "randomSeed": 42,
+        "meanArrivalGapMin": 5,
+        "walkInShare": 0.25,
+        "noShowShare": 0.05,
+        "cancelShare": 0.04,
+        "lateArrivalShare": 0.2,
+        "maxInitialWaitMin": 45,
+        "waitlistSize": 4
+      }
+    },
+    {
+      "name": "Bandra West Imaging & Labs",
+      "city": "Mumbai",
+      "timezone": "Asia/Kolkata",
+      "locale": "en-IN",
+      "hours": { "opens": "08:00", "closes": "20:00" },
+      "holdTtlSeconds": 180,
+      "offerTtlSeconds": 900,
+      "offerLeadMinutes": 30,
+      "categories": [
+        { "code": "pathology", "name": "Pathology", "sortOrder": 1 },
+        { "code": "imaging", "name": "Imaging", "sortOrder": 2 },
+        { "code": "advanced_imaging", "name": "CT & Mammography", "sortOrder": 3 }
+      ],
+      "capabilities": [
+        { "code": "blood_collection", "name": "Blood collection bay" },
+        { "code": "phlebotomist", "name": "Phlebotomist" },
+        { "code": "ultrasound", "name": "Ultrasound room" },
+        { "code": "radiologist", "name": "Radiologist" },
+        { "code": "xray", "name": "Digital X-ray room" },
+        { "code": "radiographer", "name": "Radiographer" },
+        { "code": "ct", "name": "CT scanner" },
+        { "code": "ct_tech", "name": "CT technologist" },
+        { "code": "mammography", "name": "Mammography unit" }
+      ],
+      "resources": [
+        { "name": "Sample Counter", "kind": "room", "capabilities": ["blood_collection"] },
+        { "name": "Sangeeta (Phlebotomist)", "kind": "staff", "capabilities": ["phlebotomist"] },
+        { "name": "Ultrasound Suite", "kind": "equipment", "capabilities": ["ultrasound"] },
+        { "name": "Dr. Fernandes (Radiologist)", "kind": "staff", "capabilities": ["radiologist"] },
+        { "name": "Dr. Rao (Radiologist)", "kind": "staff", "capabilities": ["radiologist"] },
+        { "name": "DR Room", "kind": "equipment", "capabilities": ["xray"] },
+        { "name": "Aslam (Radiographer)", "kind": "staff", "capabilities": ["radiographer", "ct_tech"] },
+        { "name": "Leena (Radiographer)", "kind": "staff", "capabilities": ["radiographer", "ct_tech"] },
+        { "name": "CT Scanner", "kind": "equipment", "capabilities": ["ct"] },
+        { "name": "Mammography Room", "kind": "equipment", "capabilities": ["mammography"] }
+      ],
+      "services": [
+        { "code": "CBC", "name": "Complete blood count", "category": "pathology", "durationMin": 10, "requirements": ["blood_collection", "phlebotomist"] },
+        { "code": "KFT", "name": "Kidney function test", "category": "pathology", "durationMin": 10, "requirements": ["blood_collection", "phlebotomist"] },
+        { "code": "VITD", "name": "Vitamin D", "category": "pathology", "durationMin": 5, "requirements": ["blood_collection", "phlebotomist"] },
+        { "code": "USG_ABD", "name": "Ultrasound — whole abdomen", "category": "imaging", "durationMin": 20, "requirements": ["ultrasound", "radiologist"] },
+        { "code": "XRAY_CHEST", "name": "Chest X-ray", "category": "imaging", "durationMin": 10, "requirements": ["xray", "radiographer"] },
+        { "code": "XRAY_KNEE", "name": "Knee X-ray (both views)", "category": "imaging", "durationMin": 15, "requirements": ["xray", "radiographer"] },
+        { "code": "CT_HEAD", "name": "CT head (plain)", "category": "advanced_imaging", "durationMin": 20, "requirements": ["ct", "ct_tech", "radiologist"] },
+        { "code": "CT_CONTRAST", "name": "CT abdomen with contrast", "category": "advanced_imaging", "durationMin": 30, "requirements": ["ct", "ct_tech", "radiologist"] },
+        { "code": "MAMMO", "name": "Screening mammogram", "category": "advanced_imaging", "durationMin": 20, "requirements": ["mammography", "radiographer"] }
+      ],
+      "prerequisites": [{ "service": "CT_CONTRAST", "requires": "KFT", "minGapMin": 30 }],
+      "staff": [
+        { "name": "Neha Shah", "role": "manager", "pin": "5555" },
+        { "name": "Kiran Patil", "role": "reception", "pin": "3333" },
+        { "name": "Joseph D'Souza", "role": "technician", "pin": "4444" }
+      ],
+      "priorityLevels": [
+        { "level": 0, "label": "Routine" },
+        { "level": 5, "label": "Same-day report", "description": "Referring doctor needs the report today" },
+        { "level": 9, "label": "Emergency referral", "description": "Sent from casualty; see as soon as equipment is free" }
+      ],
+      "settings": {
+        "demo_sign_in_hint": "Demo PINs — Neha Shah (manager) 5555 · Kiran Patil (front desk) 3333 · Joseph D'Souza (technician) 4444",
+        "slot_search_step_min": 10,
+        "late_arrival_flag_min": 15,
+        "sim_breakdown_capability": "ct",
+        "sim_breakdown_reason": "CT tube overheating — cooling cycle",
+        "sim_focus_category": "advanced_imaging",
+        "sim_no_show_rate": 0.12
+      },
+      "templates": {
+        "booking.confirmed": "{centre}: your appointment is confirmed for {time}. Please bring your doctor's prescription."
+      },
+      "demand": {
+        "appointment": [
+          { "weight": 12, "services": ["CBC", "KFT"] },
+          { "weight": 6, "services": ["VITD"] },
+          { "weight": 12, "services": ["USG_ABD"] },
+          { "weight": 14, "services": ["XRAY_CHEST"] },
+          { "weight": 8, "services": ["XRAY_KNEE"] },
+          { "weight": 7, "services": ["CT_HEAD"] },
+          { "weight": 6, "services": ["KFT", "CT_CONTRAST"] },
+          { "weight": 9, "services": ["MAMMO"] },
+          { "weight": 5, "services": ["MAMMO", "USG_ABD"] }
+        ],
+        "walk_in": [
+          { "weight": 3, "services": ["XRAY_CHEST"] },
+          { "weight": 2, "services": ["XRAY_KNEE"] },
+          { "weight": 2, "services": ["CBC"] },
+          { "weight": 1, "services": ["CT_HEAD"] }
+        ],
+        "waitlist": [
+          { "weight": 2, "services": ["CT_HEAD"] },
+          { "weight": 1, "services": ["MAMMO"] },
+          { "weight": 1, "services": ["USG_ABD"] }
+        ]
+      },
+      "activity": {
+        "randomSeed": 7,
+        "meanArrivalGapMin": 7,
+        "walkInShare": 0.2,
+        "noShowShare": 0.08,
+        "cancelShare": 0.05,
+        "lateArrivalShare": 0.25,
+        "maxInitialWaitMin": 45,
+        "waitlistSize": 3
+      }
+    }
+  ]
+}

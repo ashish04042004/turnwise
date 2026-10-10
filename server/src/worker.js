@@ -1,10 +1,14 @@
 import { Worker } from 'bullmq';
+import { closeCache } from './cache.js';
 import { config } from './config.js';
 import { pool, withTx } from './db.js';
+import { startCacheInvalidation } from './invalidation.js';
 import { deliveryJobOptions, makeQueue, QUEUES, redisConnection } from './queue.js';
 import { expireHolds } from './services/booking.js';
 import { sweepOverruns } from './services/operations.js';
 import { recoverCapacity } from './services/waitlist.js';
+
+await startCacheInvalidation();
 
 const maintenance = makeQueue(QUEUES.maintenance);
 const notifications = makeQueue(QUEUES.notifications);
@@ -120,7 +124,7 @@ console.log('[worker] Turnwise worker running: hold expiry, outbox relay, overru
 
 async function shutdown() {
   await Promise.allSettled(workers.map((w) => w.close()));
-  await Promise.allSettled([maintenance.close(), notifications.close(), recovery.close()]);
+  await Promise.allSettled([maintenance.close(), notifications.close(), recovery.close(), closeCache()]);
   await pool.end();
   process.exit(0);
 }

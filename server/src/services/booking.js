@@ -1,11 +1,15 @@
 import { randomUUID } from 'node:crypto';
-import { conflict, HttpError, isCapacityConflict, lockCentrePlanning, notFound, pool, retryOnConflict, withTx } from '../db.js';
+import { badRequest, conflict, HttpError, isCapacityConflict, lockCentrePlanning, notFound, pool, retryOnConflict, withTx } from '../db.js';
 import { enqueueOutbox, notifyPatient, recordEvent } from '../events.js';
 import { planSteps } from '../domain/scheduler.js';
 import { buildPlannerState, loadSnapshot, newVisitSteps } from './context.js';
+import { fmtTime, renderMessage } from './messages.js';
 import { insertPatient, insertStep, insertVisit, persistPlacement, recordEstimates, releaseStepReservations } from './persist.js';
 
-export const fmtTime = (d, tz) => new Date(d).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: tz });
+/** Front desk may only choose urgency levels the centre has configured. */
+export function assertPriority(centre, priority) {
+  if (priority && !centre.priorityLevels.some((p) => p.level === priority)) throw badRequest(`Priority ${priority} is not configured for this centre`);
+}
 
 export function describePlacements(snap, placements, steps) {
   const resName = new Map(snap.resources.map((r) => [r.id, r.name]));
@@ -85,7 +89,7 @@ export async function expireHolds(db, centreId) {
 }
 
 /** Feasible start options for a set of services, without reserving anything. */
-export async function searchSlots(centre, serviceIds, from, count = 5) {
+export async function searchSlots(centre, serviceIds, from, count = centre.settings.slot_search_options) {
   const snap = await loadSnapshot(pool, centre);
   const state = buildPlannerState(snap, new Set());
   const options = [];
@@ -105,13 +109,14 @@ export async function searchSlots(centre, serviceIds, from, count = 5) {
       seen.add(start);
       options.push({ start: new Date(start).toISOString(), end: new Date(end).toISOString(), steps: describePlacements(snap, plan.placements, steps) });
     }
-    t = start + 15 * 60_000;
+    t = start + centre.settings.slot_search_step_min * 60_000;
   }
   return { options, exhaustedReason: options.length < count ? reason : null };
 }
 
 /** Temporarily reserves every resource a booking needs; the hold must be confirmed before it expires. */
 export async function createHold(centre, input, actor) {
+  assertPriority(centre, input.priority);
   try {
     return await withTx(async (tx) => {
       await lockCentrePlanning(tx, centre.id);
@@ -180,7 +185,7 @@ export async function confirmHeldVisit(tx, centre, visitId, actor) {
     visitId,
     phone: v.phone,
     name: v.name,
-    message: `Your visit at ${centre.name} is confirmed for ${fmtTime(v.scheduled_at, centre.timezone)}.`,
+    message: renderMessage(centre, 'booking.confirmed', { time: fmtTime(v.scheduled_at, centre) }),
     key: `confirm:${visitId}`,
   });
   return { alreadyConfirmed: false };
@@ -196,6 +201,7 @@ export async function confirmHold(centre, visitId, actor) {
  * rejected by the exclusion constraint and it re-plans on fresh state.
  */
 export async function createWalkIn(centre, input, actor) {
+  assertPriority(centre, input.priority);
   return retryOnConflict(() =>
     withTx(async (tx) => {
       await lockCentrePlanning(tx, centre.id);
@@ -296,7 +302,7 @@ export async function releaseVisit(centre, visitId, outcome, reason, actor) {
         visitId,
         phone: v.phone,
         name: v.name,
-        message: `Your visit at ${centre.name} has been cancelled.`,
+        message: renderMessage(centre, 'visit.cancelled'),
         key: `cancel:${visitId}`,
       });
     }

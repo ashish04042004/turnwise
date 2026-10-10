@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { badRequest, HttpError, lockCentrePlanning, pool, retryOnConflict, withTx } from '../db.js';
+import { badRequest, HttpError, lockCentrePlanning, retryOnConflict, withTx } from '../db.js';
 import { notifyPatient, recordEvent } from '../events.js';
 import { planSteps } from '../domain/scheduler.js';
 import { buildPlannerState, getCentre, loadSnapshot, newVisitSteps } from './context.js';
-import { confirmHeldVisit, expireHolds, fmtTime } from './booking.js';
+import { confirmHeldVisit, expireHolds } from './booking.js';
+import { fmtTime, renderMessage } from './messages.js';
 import { insertPatient, insertStep, insertVisit, persistPlacement } from './persist.js';
 
 export async function addToWaitlist(centre, { patient, serviceIds, earliest, latest }, actor) {
@@ -29,7 +30,7 @@ export async function addToWaitlist(centre, { patient, serviceIds, earliest, lat
  * crash finds it already done instead of making a second offer.
  */
 export async function recoverCapacity(centreId, release, outboxId = null) {
-  const centre = await getCentre(pool, centreId);
+  const centre = await getCentre(centreId);
   return retryOnConflict(() =>
     withTx(async (tx) => {
       if (outboxId != null) {
@@ -49,10 +50,10 @@ export async function recoverCapacity(centreId, release, outboxId = null) {
       const { rows: entries } = await tx.query(
         `SELECT w.*, p.name, p.phone FROM waitlist_entries w JOIN patients p ON p.id = w.patient_id
          WHERE w.centre_id = $1 AND w.status = 'waiting' AND w.latest > $2 AND w.earliest < $3
-           AND (w.last_offer_expired_at IS NULL OR w.last_offer_expired_at < now() - interval '30 minutes')
+           AND (w.last_offer_expired_at IS NULL OR w.last_offer_expired_at < now() - make_interval(mins => $4))
          ORDER BY w.created_at
          FOR UPDATE OF w`,
-        [centre.id, new Date(gapStart), new Date(gapEnd)],
+        [centre.id, new Date(gapStart), new Date(gapEnd), centre.settings.waitlist_offer_cooldown_min],
       );
       const state = buildPlannerState(snap, new Set());
       for (const e of entries) {
@@ -95,7 +96,11 @@ export async function recoverCapacity(centreId, release, outboxId = null) {
           visitId,
           phone: e.phone,
           name: e.name,
-          message: `${centre.name}: a slot opened at ${fmtTime(first, centre.timezone)}. Accept within ${Math.round(centre.offer_ttl_seconds / 60)} min: /p/${public_token}`,
+          message: renderMessage(centre, 'waitlist.offer', {
+            time: fmtTime(first, centre),
+            minutes: Math.round(centre.offer_ttl_seconds / 60),
+            link: `/p/${public_token}`,
+          }),
           key: `offer:${visitId}`,
         });
         return { offered: true, waitlistEntryId: e.id, visitId };
@@ -120,7 +125,7 @@ async function offerByToken(tx, token) {
 export async function acceptOffer(token) {
   return withTx(async (tx) => {
     const offer = await offerByToken(tx, token);
-    const centre = await getCentre(tx, offer.centre_id);
+    const centre = await getCentre(offer.centre_id);
     await confirmHeldVisit(tx, centre, offer.visit_id, 'patient');
     const { rows } = await tx.query(
       `UPDATE waitlist_entries SET status = 'booked', booked_at = now() WHERE id = $1

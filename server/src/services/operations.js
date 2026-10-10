@@ -1,9 +1,8 @@
-import { config } from '../config.js';
 import { conflict, isCapacityConflict, notFound, pool, withTx } from '../db.js';
 import { candidateOptions, matchRequirements } from '../domain/scheduler.js';
 import { recordEvent } from '../events.js';
 import { getCentre, loadSnapshot } from './context.js';
-import { fmtTime } from './booking.js';
+import { fmtTime } from './messages.js';
 import { recordEstimates } from './persist.js';
 import { loadDurationStats, projectSnapshot } from './projections.js';
 import { displaceSteps, generateProposal } from './replan.js';
@@ -58,7 +57,7 @@ async function occupy(tx, centre, step, start, end, { protectBefore = null, forc
     if (c.kind === 'downtime') throw conflict(`${c.resource} is marked unavailable`);
     if (c.status === 'in_use') throw conflict(`${c.resource} is still busy with ${c.patient}`);
     if (!force && protectBefore && c.start < protectBefore) {
-      throw conflict(`${c.resource} is booked for ${c.patient} at ${fmtTime(c.start, centre.timezone)}`, { canForce: true });
+      throw conflict(`${c.resource} is booked for ${c.patient} at ${fmtTime(c.start, centre)}`, { canForce: true });
     }
   }
   const { rows: own } = await tx.query(
@@ -163,7 +162,7 @@ export async function startStep(centre, stepId, { force = false } = {}, actor) {
         protectBefore: s.planned_start,
         force,
         rebind: true,
-        reason: `${s.service} for ${s.patient} started at ${fmtTime(start, centre.timezone)}`,
+        reason: `${s.service} for ${s.patient} started at ${fmtTime(start, centre)}`,
         actor,
       });
       await tx.query(`UPDATE visits SET status = 'in_progress' WHERE id = $1`, [s.visit_id]);
@@ -238,16 +237,16 @@ export async function extendStep(centre, stepId, minutes, actor) {
  * Short overruns only show up as projected delay.
  */
 export async function sweepOverruns(centreId) {
-  const centre = await getCentre(pool, centreId);
+  const centre = await getCentre(centreId);
   const { rows } = await pool.query(
     `SELECT s.id FROM visit_steps s JOIN visits v ON v.id = s.visit_id
      WHERE v.centre_id = $1 AND s.status = 'in_service' AND upper(s.planned) <= now() - make_interval(mins => $2)`,
-    [centreId, config.overrunGraceMin],
+    [centreId, centre.settings.overrun_grace_min],
   );
   let extended = 0;
   for (const r of rows) {
     try {
-      await extendStep(centre, r.id, 5, 'overrun-sweeper');
+      await extendStep(centre, r.id, centre.settings.overrun_extend_min, 'overrun-sweeper');
       extended++;
     } catch (err) {
       if (err.status !== 409) throw err;

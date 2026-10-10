@@ -1,6 +1,6 @@
-import pg from 'pg';
-import { config } from './config.js';
+import { invalidate, keys } from './cache.js';
 import { pool } from './db.js';
+import { subscribe } from './pgListener.js';
 import { getCentre } from './services/context.js';
 
 const clients = new Set();
@@ -20,33 +20,15 @@ function broadcast(evt) {
 }
 
 /**
- * Listens to Postgres NOTIFY. Notifications are only delivered for committed
- * transactions, so dashboards never see a change that was rolled back.
+ * Forwards committed events to SSE clients, so dashboards never see a change
+ * that was rolled back. The cached board is dropped first, so the refresh an
+ * event triggers can't be served the board from before it.
  */
 export async function startLiveHub() {
-  const connect = async () => {
-    const client = new pg.Client({ connectionString: config.databaseUrl });
-    client.on('error', (err) => {
-      console.error('[live] listener error, reconnecting', err.message);
-      client.end().catch(() => undefined);
-      setTimeout(connect, 2000);
-    });
-    client.on('notification', (msg) => {
-      try {
-        broadcast(JSON.parse(msg.payload));
-      } catch (err) {
-        console.error('[live] bad payload', err);
-      }
-    });
-    try {
-      await client.connect();
-      await client.query('LISTEN turnwise_events');
-    } catch (err) {
-      console.error('[live] could not listen, retrying', err.message);
-      setTimeout(connect, 2000);
-    }
-  };
-  await connect();
+  await subscribe('turnwise_events', async (evt) => {
+    await invalidate(keys.board(evt.centreId));
+    broadcast(evt);
+  });
 }
 
 /**
@@ -54,7 +36,7 @@ export async function startLiveHub() {
  * receives every event it missed from the audit log before live ones resume.
  */
 export async function streamHandler(req, res) {
-  const centre = await getCentre(pool, req.staff?.centre_id);
+  const centre = await getCentre(req.staff?.centre_id);
   res.set({
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',

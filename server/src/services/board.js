@@ -1,8 +1,9 @@
+import { cached, invalidate, keys } from '../cache.js';
 import { config } from '../config.js';
 import { notFound, pool } from '../db.js';
 import { suggestNextUp } from '../domain/dispatch.js';
 import { waitRange } from '../domain/projection.js';
-import { getCentre, loadSnapshot, STEP_SELECT } from './context.js';
+import { getCentre, granularityMs, loadSnapshot, STEP_SELECT } from './context.js';
 import { estimateErrorP80, loadDurationStats, projectSnapshot } from './projections.js';
 
 const iso = (d) => (d == null ? null : new Date(d).toISOString());
@@ -100,10 +101,11 @@ function shapeVisit(day, v) {
   const next = open.find((s) => s.status === 'in_service') ?? open.find((s) => s.status === 'scheduled') ?? open[0] ?? null;
   const waitMin = next?.projectedStart && next.status === 'scheduled' ? Math.max(0, Math.round((Date.parse(next.projectedStart) - now) / 60_000)) : null;
 
+  const { late_arrival_flag_min: lateAfterMin, running_late_flag_min: runningLateMin } = snap.centre.settings;
   const flags = [];
   if (open.some((s) => s.status === 'displaced' || s.status === 'unscheduled')) flags.push('needs_replan');
-  if (v.status === 'booked' && v.scheduled_at && v.scheduled_at.getTime() < now - 10 * 60_000) flags.push('late_arrival');
-  if (open.some((s) => s.delayMin >= 10)) flags.push('running_late');
+  if (v.status === 'booked' && v.scheduled_at && v.scheduled_at.getTime() < now - lateAfterMin * 60_000) flags.push('late_arrival');
+  if (open.some((s) => s.delayMin >= runningLateMin)) flags.push('running_late');
   if (open.some((s) => s.status === 'in_service' && s.plannedEnd && Date.parse(s.plannedEnd) < now)) flags.push('overrun');
 
   return {
@@ -134,7 +136,7 @@ export async function getNextUp(centre) {
 
 function nextUp(snap) {
   const now = snap.clock.now;
-  const g = config.slotGranularityMin * 60_000;
+  const g = granularityMs(snap.centre);
   const t = (d) => d?.getTime();
   const inService = new Set(snap.steps.filter((s) => s.status === 'in_service').map((s) => s.visit_id));
 
@@ -183,8 +185,22 @@ function nextUp(snap) {
   }));
 }
 
-export async function getBoard(centreId) {
-  const centre = await getCentre(pool, centreId);
+/**
+ * The live floor. Every event invalidates it; the short TTL mostly coalesces
+ * many screens refreshing at once. A client that has seen event N passes
+ * `minEventId: N`, and a cached board older than that is rebuilt, so a
+ * refresh triggered by an event can never be answered from before it.
+ */
+export async function getBoard(centreId, { minEventId = 0 } = {}) {
+  const load = () => cached(keys.board(centreId), config.cache.boardSeconds, () => buildBoard(centreId));
+  const board = await load();
+  if (board.lastEventId >= minEventId) return board;
+  await invalidate(keys.board(centreId));
+  return load();
+}
+
+async function buildBoard(centreId) {
+  const centre = await getCentre(centreId);
   const day = await loadDay(centre);
   const { snap, projected } = day;
   const now = snap.clock.now;
@@ -246,14 +262,19 @@ export async function getBoard(centreId) {
   const overruns = visits.filter((v) => v.flags.includes('overrun'));
   if (overruns.length) alerts.push({ level: 'warning', text: `${overruns.length} service(s) running past their slot` });
   const late = visits.filter((v) => v.flags.includes('late_arrival'));
-  if (late.length) alerts.push({ level: 'info', text: `${late.length} booked patient(s) more than 10 min late — consider no-show` });
+  if (late.length) {
+    alerts.push({ level: 'info', text: `${late.length} booked patient(s) more than ${centre.settings.late_arrival_flag_min} min late — consider no-show` });
+  }
 
+  const categoryOrder = new Map(centre.categories.map((c, i) => [c.code, i]));
   return {
-    centre: { id: snap.centre.id, name: snap.centre.name, city: snap.centre.city, timezone: snap.centre.timezone },
+    centre: { id: centre.id, name: centre.name, city: centre.city, timezone: centre.timezone, locale: centre.locale },
     now: iso(now),
     window: { opensAt: iso(snap.clock.opensAt), closesAt: iso(snap.clock.closesAt) },
     lastEventId: day.lastEventId,
-    services: [...snap.services.values()].sort((a, b) => a.category.localeCompare(b.category) || a.code.localeCompare(b.code)),
+    services: [...snap.services.values()].sort(
+      (a, b) => (categoryOrder.get(a.category) ?? 99) - (categoryOrder.get(b.category) ?? 99) || a.code.localeCompare(b.code),
+    ),
     resources,
     timeline,
     visits,
@@ -281,7 +302,7 @@ export async function getBoard(centreId) {
 export async function getPatientView(token) {
   const { rows } = await pool.query(`SELECT centre_id, id FROM visits WHERE public_token = $1`, [token]);
   if (!rows[0]) throw notFound('Visit');
-  const centre = await getCentre(pool, rows[0].centre_id);
+  const centre = await getCentre(rows[0].centre_id);
   const day = await loadDay(centre);
   const raw = day.visits.find((v) => v.id === rows[0].id) ?? (await pool.query(
     `SELECT v.*, p.name AS patient, p.phone FROM visits v JOIN patients p ON p.id = v.patient_id WHERE v.id = $1`,

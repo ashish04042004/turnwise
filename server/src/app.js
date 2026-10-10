@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { z, ZodError } from 'zod';
-import { actorOf, authenticate, listStaff, login, logout, PERMISSIONS, renewSession, requireRole, requireStaff } from './auth.js';
+import { actorOf, authenticate, login, logout, renewSession, requirePermission, requireStaff } from './auth.js';
 import { config } from './config.js';
 import { HttpError, pool } from './db.js';
 import { latencyMiddleware, latencySummary } from './latency.js';
@@ -11,17 +11,20 @@ import { getAnalytics, getEvents } from './services/analytics.js';
 import { getBaselineComparison } from './services/comparison.js';
 import { getBoard, getPatientView } from './services/board.js';
 import { confirmHold, createHold, createWalkIn, releaseVisit, searchSlots } from './services/booking.js';
-import { getCentre } from './services/context.js';
 import { checkIn, completeStep, extendStep, startStep } from './services/operations.js';
+import { getCentre, getReference, listCentres, permissionsOf } from './services/reference.js';
 import { applyProposal, generateProposal, markResourceDown, markResourceUp, rejectProposal } from './services/replan.js';
+import { listOverrides, resetSetting, updateSetting } from './services/settings.js';
 import { simBreakdown, simCancel, simOverrun, simTick, simWalkInRush } from './services/simulator.js';
-import { addStaff, listAllStaff, updateStaff } from './services/staff.js';
+import { addStaff, listAllStaff, listStaff, updateStaff } from './services/staff.js';
 import { acceptOffer, addToWaitlist, declineOffer } from './services/waitlist.js';
 
 const uuid = z.string().uuid();
 const pin = z.string().regex(/^\d{4,8}$/, 'PIN must be 4–8 digits');
 const staffName = z.string().trim().min(2).max(60);
-const role = z.enum(['reception', 'technician', 'manager']);
+// Roles live in the roles table; the foreign key rejects unknown ones.
+const role = z.string().trim().min(1).max(40);
+const settingKey = z.string().regex(/^[a-z][a-z0-9_]{1,59}$/);
 const patient = z.object({ name: z.string().trim().min(2).max(80), phone: z.string().trim().max(20).optional().nullable() });
 const services = z.array(uuid).min(1).max(8);
 
@@ -51,11 +54,29 @@ const schemas = {
   waitlist: z.object({ patient, serviceIds: services, earliest: z.coerce.date(), latest: z.coerce.date() }),
   rush: z.object({ count: z.number().int().min(1).max(10).optional() }),
   minutes: z.object({ minutes: z.number().int().min(5).max(120).optional() }),
+  setting: z.object({ value: z.union([z.number(), z.string(), z.boolean()]) }),
 };
 
 const token = z.string().min(6).max(64);
 /** Every staff request acts on the signed-in person's own centre. */
-const centreOf = (req) => getCentre(pool, req.staff.centre_id);
+const centreOf = (req) => getCentre(req.staff.centre_id);
+
+/** Everything the dashboard needs to render this centre: labels, options and settings, all from the database. */
+async function clientConfig(req) {
+  const [centre, reference, permissions] = await Promise.all([centreOf(req), getReference(), permissionsOf(req.staff.role)]);
+  const canConfigure = permissions.includes('settings');
+  return {
+    centre: { id: centre.id, name: centre.name, city: centre.city, timezone: centre.timezone, locale: centre.locale },
+    roles: reference.roles.map(({ code, label }) => ({ code, label })),
+    permissions,
+    categories: centre.categories,
+    capabilities: centre.capabilities,
+    priorityLevels: centre.priorityLevels,
+    settings: centre.settings,
+    simulator: config.enableSimulator,
+    ...(canConfigure && { settingDefinitions: reference.settingDefinitions, overrides: await listOverrides(centre.id) }),
+  };
+}
 
 export function createApp() {
   const app = express();
@@ -72,16 +93,27 @@ export function createApp() {
     res.json({ ok: true, liveClients: liveClientCount() });
   });
 
-  // Sign-in. The staff list feeds the sign-in picker for the (single) default centre.
-  api.get('/auth/staff', async (_req, res) => res.json({ staff: await listStaff((await getCentre(pool)).id), demo: config.enableSimulator }));
+  // Sign-in: pick a centre, then a person at it.
+  api.get('/auth/centres', async (_req, res) => res.json({ centres: await listCentres() }));
+  api.get('/auth/staff', async (req, res) => {
+    const centre = await getCentre(uuid.optional().parse(req.query.centreId || undefined));
+    const { roles } = await getReference();
+    res.json({
+      centre: { id: centre.id, name: centre.name, city: centre.city },
+      staff: await listStaff(centre.id),
+      roles: roles.map(({ code, label }) => ({ code, label })),
+      hint: centre.settings.demo_sign_in_hint || null,
+      demo: config.enableSimulator,
+    });
+  });
   api.post('/auth/login', async (req, res) => res.json({ staff: await login(req, res, schemas.login.parse(req.body)) }));
   api.post('/auth/logout', async (req, res) => {
     await logout(req, res);
     res.json({ ok: true });
   });
-  api.get('/auth/me', requireStaff, (req, res) => {
+  api.get('/auth/me', requireStaff, async (req, res) => {
     const { session_version: _v, ...staff } = req.staff;
-    res.json({ staff, permissions: Object.keys(PERMISSIONS).filter((p) => PERMISSIONS[p].includes(staff.role)) });
+    res.json({ staff, permissions: await permissionsOf(staff.role) });
   });
 
   // Patient-facing links, authorised by their unguessable token.
@@ -92,7 +124,11 @@ export function createApp() {
   // Everything below needs a signed-in staff member.
   api.use(requireStaff);
 
-  api.get('/board', async (req, res) => res.json(await getBoard(req.staff.centre_id)));
+  api.get('/config', async (req, res) => res.json(await clientConfig(req)));
+  api.get('/board', async (req, res) => {
+    const minEventId = z.coerce.number().int().min(0).optional().parse(req.query.after);
+    res.json(await getBoard(req.staff.centre_id, { minEventId }));
+  });
   api.get('/stream', streamHandler);
   api.get('/analytics', async (req, res) => res.json(await getAnalytics(req.staff.centre_id)));
   api.get('/analytics/baseline', async (req, res) => res.json(await getBaselineComparison(req.staff.centre_id)));
@@ -103,7 +139,7 @@ export function createApp() {
   });
   api.get('/metrics/latency', (_req, res) => res.json(latencySummary()));
 
-  const frontDesk = requireRole(PERMISSIONS.frontDesk);
+  const frontDesk = requirePermission('frontDesk');
   api.post('/slots/search', frontDesk, async (req, res) => {
     const body = schemas.search.parse(req.body);
     res.json(await searchSlots(await centreOf(req), body.serviceIds, body.from ?? null));
@@ -121,7 +157,7 @@ export function createApp() {
   );
   api.post('/waitlist', frontDesk, async (req, res) => res.status(201).json(await addToWaitlist(await centreOf(req), schemas.waitlist.parse(req.body), actorOf(req))));
 
-  const floor = requireRole(PERMISSIONS.floor);
+  const floor = requirePermission('floor');
   api.post('/steps/:id/start', floor, async (req, res) => {
     const opts = schemas.start.parse(req.body ?? {});
     res.json(await startStep(await centreOf(req), uuid.parse(req.params.id), opts, actorOf(req)));
@@ -132,14 +168,14 @@ export function createApp() {
     res.json(await extendStep(await centreOf(req), uuid.parse(req.params.id), minutes, actorOf(req)));
   });
 
-  const resourcesRole = requireRole(PERMISSIONS.resources);
+  const resourcesRole = requirePermission('resources');
   api.post('/resources/:id/down', resourcesRole, async (req, res) => {
     const { minutes, reason } = schemas.down.parse(req.body);
     res.json(await markResourceDown(await centreOf(req), uuid.parse(req.params.id), minutes, reason ?? null, actorOf(req)));
   });
   api.post('/resources/:id/up', resourcesRole, async (req, res) => res.json(await markResourceUp(await centreOf(req), uuid.parse(req.params.id), actorOf(req))));
 
-  const replan = requireRole(PERMISSIONS.replan);
+  const replan = requirePermission('replan');
   api.post('/replan', replan, async (req, res) => res.json({ proposal: await generateProposal(await centreOf(req), 'Requested by staff', actorOf(req)) }));
   api.post('/proposals/:id/apply', replan, async (req, res) => {
     const { option } = schemas.apply.parse(req.body);
@@ -150,7 +186,14 @@ export function createApp() {
     res.json({ ok: true });
   });
 
-  const manageStaff = requireRole(PERMISSIONS.staff);
+  const configure = requirePermission('settings');
+  api.put('/settings/:key', configure, async (req, res) => {
+    const { value } = schemas.setting.parse(req.body);
+    res.json(await updateSetting(req.staff.centre_id, settingKey.parse(req.params.key), value, actorOf(req)));
+  });
+  api.delete('/settings/:key', configure, async (req, res) => res.json(await resetSetting(req.staff.centre_id, settingKey.parse(req.params.key), actorOf(req))));
+
+  const manageStaff = requirePermission('staff');
   api.get('/staff', manageStaff, async (req, res) => res.json({ staff: await listAllStaff(req.staff.centre_id) }));
   api.post('/staff', manageStaff, async (req, res) => res.status(201).json(await addStaff(req.staff.centre_id, schemas.addStaff.parse(req.body), actorOf(req))));
   api.patch('/staff/:id', manageStaff, async (req, res) => {
@@ -164,7 +207,7 @@ export function createApp() {
   });
 
   if (config.enableSimulator) {
-    const simulate = requireRole(PERMISSIONS.simulate);
+    const simulate = requirePermission('simulate');
     const id = (req) => req.staff.centre_id;
     api.post('/sim/tick', simulate, async (req, res) => res.json(await simTick(id(req))));
     api.post('/sim/walk-in-rush', simulate, async (req, res) => res.json(await simWalkInRush(id(req), schemas.rush.parse(req.body ?? {}).count ?? 3)));

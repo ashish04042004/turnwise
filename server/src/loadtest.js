@@ -6,10 +6,12 @@
  *   npm run loadtest -- --clients 50 --attempts 400 --slots 20
  */
 import { parseArgs } from 'node:util';
+import { closeCache } from './cache.js';
 import { pool } from './db.js';
 import { migrate } from './migrate.js';
 import { createHold, createWalkIn } from './services/booking.js';
 import { getCentre } from './services/context.js';
+import { provisionCentre } from './services/provisioning.js';
 import { percentile } from './util.js';
 
 const { values } = parseArgs({
@@ -39,26 +41,23 @@ async function main() {
     if (o > 14) o -= 24;
     return o >= 0 ? `Etc/GMT-${o}` : `Etc/GMT+${-o}`;
   })();
-  const { rows } = await pool.query(
-    `INSERT INTO centres (name, city, timezone, opens_at, closes_at) VALUES ('Load Test Centre', 'Bench', $1, '00:00', '23:59') RETURNING id`,
-    [offset],
-  );
-  const centre = await getCentre(pool, rows[0].id);
+  const provisioned = await provisionCentre(pool, {
+    name: 'Load Test Centre',
+    city: 'Bench',
+    timezone: offset,
+    hours: { opens: '00:00', closes: '23:59' },
+    displayOrder: 1000,
+    resources: [
+      { name: 'Machine 1', kind: 'equipment', capabilities: ['scan'] },
+      { name: 'Machine 2', kind: 'equipment', capabilities: ['scan'] },
+      { name: 'Operator 1', kind: 'staff', capabilities: ['operator'] },
+      { name: 'Operator 2', kind: 'staff', capabilities: ['operator'] },
+    ],
+    services: [{ code: 'SCAN', name: 'Scan', category: 'bench', durationMin: 15, requirements: ['scan', 'operator'] }],
+  });
+  const centre = await getCentre(provisioned.centre.id);
   try {
-    for (const [name, caps] of [
-      ['Machine 1', ['scan']],
-      ['Machine 2', ['scan']],
-      ['Operator 1', ['operator']],
-      ['Operator 2', ['operator']],
-    ]) {
-      await pool.query(`INSERT INTO resources (centre_id, name, kind, capabilities) VALUES ($1, $2, 'equipment', $3)`, [centre.id, name, caps]);
-    }
-    const svc = (
-      await pool.query(
-        `INSERT INTO services (centre_id, code, name, category, duration_min, requirements) VALUES ($1, 'SCAN', 'Scan', 'bench', 15, '{scan,operator}') RETURNING id`,
-        [centre.id],
-      )
-    ).rows[0].id;
+    const svc = provisioned.services.get('SCAN').id;
 
     const now = (await pool.query('SELECT now() AS now')).rows[0].now.getTime();
     const base = Math.ceil((now + 30 * MIN) / (5 * MIN)) * 5 * MIN;
@@ -122,6 +121,7 @@ async function main() {
     await pool.query('DELETE FROM visits WHERE centre_id = $1', [centre.id]);
     await pool.query('DELETE FROM reservations WHERE centre_id = $1', [centre.id]);
     await pool.query('DELETE FROM centres WHERE id = $1', [centre.id]);
+    await closeCache();
     await pool.end();
   }
 }

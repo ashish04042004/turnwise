@@ -1,3 +1,5 @@
+import { cached, keys } from '../cache.js';
+import { config } from '../config.js';
 import { pool } from '../db.js';
 import { percentile } from '../util.js';
 import { getCentre, getClock } from './context.js';
@@ -27,8 +29,13 @@ function histogram(values, edges) {
 }
 
 /** Operational metrics for today, all computed from the event history and actual timings. */
-export async function getAnalytics(centreId) {
-  const centre = await getCentre(pool, centreId);
+/** Whole-day statistics: a few seconds of staleness is fine, so they are cached on a TTL rather than per event. */
+export function getAnalytics(centreId) {
+  return cached(keys.analytics(centreId), config.cache.analyticsSeconds, () => computeAnalytics(centreId));
+}
+
+async function computeAnalytics(centreId) {
+  const centre = await getCentre(centreId);
   const clock = await getClock(pool, centre);
   const from = new Date(Math.min(clock.opensAt, clock.now));
   const args = [centre.id, from];
@@ -168,7 +175,7 @@ export async function getAnalytics(centreId) {
 }
 
 export async function getEvents(centreId, { limit = 100, before } = {}) {
-  const centre = await getCentre(pool, centreId);
+  const centre = await getCentre(centreId);
   const { rows } = await pool.query(
     `SELECT id, type, subject_id, payload, actor, created_at FROM events
      WHERE centre_id = $1 AND ($2::bigint IS NULL OR id < $2) ORDER BY id DESC LIMIT $3`,

@@ -18,6 +18,7 @@ COPY web/package.json web/
 RUN npm ci --omit=dev --workspace server --no-audit --no-fund && npm cache clean --force
 COPY server/src server/src
 COPY server/migrations server/migrations
+COPY server/fixtures server/fixtures
 COPY --from=build /app/web/dist web/dist
 USER node
 EXPOSE 4100

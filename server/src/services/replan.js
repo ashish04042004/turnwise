@@ -3,7 +3,7 @@ import { notifyPatient, recordEvent } from '../events.js';
 import { planSteps } from '../domain/scheduler.js';
 import { buildPlannerState, loadSnapshot, toPlannerStep } from './context.js';
 import { persistPlacement, releaseStepReservations } from './persist.js';
-import { fmtTime } from './booking.js';
+import { fmtTime, renderMessage } from './messages.js';
 
 class StaleProposalError extends Error {}
 
@@ -261,7 +261,7 @@ export async function applyProposal(centre, proposalId, optionKey, actor) {
           visitId: m.visitId,
           phone: c.phone,
           name: c.name,
-          message: `Update from ${centre.name}: your ${m.service} is now at ${fmtTime(m.to.start, centre.timezone)} (${m.to.resources.join(', ')}).`,
+          message: renderMessage(centre, 'replan.moved', { service: m.service, time: fmtTime(m.to.start, centre), resources: m.to.resources.join(', ') }),
           key: `replan:${proposalId}:${m.stepId}`,
         });
       }
@@ -298,7 +298,7 @@ export async function markResourceDown(centre, resourceId, minutes, reason, acto
        WHERE resource_id = $1 AND kind = 'downtime' AND status = 'confirmed' AND during @> now()`,
       [resourceId],
     );
-    if (existing.length) throw conflict(`${resource.name} is already unavailable until ${fmtTime(existing[0].until, centre.timezone)}`);
+    if (existing.length) throw conflict(`${resource.name} is already unavailable until ${fmtTime(existing[0].until, centre)}`);
 
     const { rows: hits } = await tx.query(
       `SELECT DISTINCT step_id FROM reservations

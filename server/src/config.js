@@ -17,6 +17,12 @@ function num(name, fallback) {
   return value;
 }
 
+function flag(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  return raw === 'true' || raw === '1';
+}
+
 const production = process.env.NODE_ENV === 'production';
 if (production && !process.env.SESSION_SECRET) throw new Error('SESSION_SECRET must be set in production');
 
@@ -29,9 +35,27 @@ export const config = {
   redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6380',
   port: num('PORT', 4100),
   notifyFailureRate: num('NOTIFY_FAILURE_RATE', 0.15),
-  enableSimulator: (process.env.ENABLE_SIMULATOR ?? 'true') === 'true',
-  /** Planner time granularity; candidate starts are rounded up to this. */
-  slotGranularityMin: 5,
-  /** Overruns shorter than this only show as projected delay; longer ones extend the reservation. */
-  overrunGraceMin: num('OVERRUN_GRACE_MIN', 5),
+  enableSimulator: flag('ENABLE_SIMULATOR', true),
+  /** Fixture loaded by `npm run seed` (path relative to server/). */
+  seedFixture: process.env.SEED_FIXTURE ?? 'fixtures/demo.json',
+  // Business behaviour (planning granularity, flags, simulator knobs) lives in
+  // the setting_definitions / centre_settings tables, not here. This file only
+  // holds deployment concerns.
+  cache: {
+    /** Share cached reads across processes through Redis; memory-only when off or when Redis is down. */
+    redis: flag('CACHE_REDIS', true),
+    /** Centre configuration and reference data; invalidated by database triggers, so this is only a backstop. */
+    configSeconds: num('CACHE_CONFIG_SECONDS', 300),
+    /** Signed-in staff lookups; invalidated when the staff row changes. */
+    staffSeconds: num('CACHE_STAFF_SECONDS', 60),
+    /** Live board; invalidated by every event, so this mainly coalesces bursts of refreshes. */
+    boardSeconds: num('CACHE_BOARD_SECONDS', 2),
+    analyticsSeconds: num('CACHE_ANALYTICS_SECONDS', 15),
+    comparisonSeconds: num('CACHE_COMPARISON_SECONDS', 60),
+    memoryEntries: num('CACHE_MEMORY_ENTRIES', 1000),
+  },
+  login: {
+    maxFailures: num('LOGIN_MAX_FAILURES', 8),
+    windowMin: num('LOGIN_WINDOW_MIN', 10),
+  },
 };

@@ -1,29 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { config } from '../config.js';
 import { badRequest, notFound, pool } from '../db.js';
 
-let cachedCentreId = null;
+export { getCentre } from './reference.js';
 
-export async function getCentre(db, centreId) {
-  const id = centreId ?? cachedCentreId;
-  const { rows } = id
-    ? await db.query('SELECT * FROM centres WHERE id = $1', [id])
-    : await db.query('SELECT * FROM centres ORDER BY created_at LIMIT 1');
-  if (!rows[0]) {
-    // The default centre was re-seeded under a new id.
-    if (!centreId && cachedCentreId) {
-      cachedCentreId = null;
-      return getCentre(db);
-    }
-    throw notFound('Centre (run `npm run seed`)');
-  }
-  if (!centreId) cachedCentreId = rows[0].id;
-  return rows[0];
-}
-
-export function resetCentreCache() {
-  cachedCentreId = null;
-}
+/** Planner time granularity for a centre, in milliseconds. */
+export const granularityMs = (centre) => centre.settings.slot_granularity_min * 60_000;
 
 /** The database clock is the only clock, so every API process and worker agrees on "now". */
 export async function getClock(db, centre) {
@@ -117,7 +98,7 @@ export async function loadSnapshot(db, centre) {
  * since an overrunning service has not released them yet.
  */
 export function buildPlannerState(snap, moving) {
-  const g = config.slotGranularityMin * 60_000;
+  const g = granularityMs(snap.centre);
   const resourceBusy = new Map();
   const visitBusy = new Map();
   const fixedStepEnds = new Map();
