@@ -30,11 +30,13 @@ Stack: **PERN in plain JavaScript**. That is PostgreSQL, Express 5, React (Vite)
 </p>
 
 <p>
-  <img src="docs/login.png" width="420" alt="Staff sign-in">
+  <img src="docs/login-centres.png" width="420" alt="Staff sign-in: pick a centre, then a person">
   <img src="docs/floor-technician.png" width="400" alt="Floor as a technician: only floor actions are shown">
 </p>
 
 <p><img src="docs/staff.png" width="640" alt="Staff management for managers"></p>
+
+<p><img src="docs/settings.png" width="640" alt="Per-centre settings, stored in the database and applied live"></p>
 
 ![Analytics](docs/analytics.png)
 
@@ -80,7 +82,9 @@ This starts Postgres, Redis, a one-shot `migrate` job, the API (which also serve
 
 ### Deploy for free (Render)
 
-`render.yaml` is a Render Blueprint for a free deployment of the demo with three pieces: a Docker web service, Postgres and Key Value (Redis-compatible). In the Render dashboard choose **New → Blueprint**, connect this repository and apply. Render generates `SESSION_SECRET` and wires `DATABASE_URL` and `REDIS_URL` itself. The app gets a public `https://…onrender.com` address with no further setup.
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/ashish04042004/turnwise)
+
+`render.yaml` is a Render Blueprint for a free deployment of the demo with three pieces: a Docker web service, Postgres and Key Value (Redis-compatible). Click the button, or in the Render dashboard choose **New → Blueprint**, connect this repository and apply. Render generates `SESSION_SECRET` and wires `DATABASE_URL` and `REDIS_URL` itself. The app gets a public `https://…onrender.com` address with no further setup.
 
 A free plan allows one web service, so the Blueprint switches on single-service mode with these settings:
 
