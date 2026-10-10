@@ -1,15 +1,19 @@
-let tz = 'Asia/Kolkata';
-export const setTimezone = (zone) => {
-  if (zone) tz = zone;
-};
+// Times are shown as the centre reads them, whatever the viewer's own device is set to.
+// Until the centre's configuration arrives, the browser's locale and zone are used.
+let locale;
+let tz;
+export function setCentreFormat(centre) {
+  locale = centre?.locale || undefined;
+  tz = centre?.timezone || undefined;
+}
 
 export function time(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz });
+  return new Date(iso).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz });
 }
 
 export function clock(iso) {
-  return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: tz });
+  return new Date(iso).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: tz });
 }
 
 export const minutesBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 60_000);

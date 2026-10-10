@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { api } from './api.js';
-import { setTimezone } from './format.js';
+import { setCentreFormat } from './format.js';
 
 const LiveContext = createContext(null);
 
@@ -9,6 +9,8 @@ const LiveContext = createContext(null);
  * event stream and re-fetches (debounced) whenever something changes. The
  * browser's EventSource resends Last-Event-ID on reconnect, so missed events
  * are replayed; a slow poll keeps time-based estimates fresh between events.
+ * Each refresh says which event it has seen, so the server never answers it
+ * with a cached board from before that event.
  */
 export function LiveProvider({ children }) {
   const [board, setBoard] = useState(null);
@@ -16,12 +18,14 @@ export function LiveProvider({ children }) {
   const [connected, setConnected] = useState(false);
   const [lastEvent, setLastEvent] = useState(null);
   const timer = useRef(null);
+  const seen = useRef(0);
 
   const refresh = useCallback(
     () =>
-      api('/board').then(
+      api(`/board?after=${seen.current}`).then(
         (b) => {
-          setTimezone(b.centre.timezone);
+          setCentreFormat(b.centre);
+          seen.current = Math.max(seen.current, b.lastEventId);
           setBoard(b);
           setError(null);
           return b;
@@ -51,7 +55,9 @@ export function LiveProvider({ children }) {
       };
       es.onerror = () => setConnected(false);
       es.onmessage = (e) => {
-        setLastEvent(JSON.parse(e.data));
+        const evt = JSON.parse(e.data);
+        seen.current = Math.max(seen.current, evt.id ?? 0);
+        setLastEvent(evt);
         scheduleRefresh();
       };
       es.addEventListener('reset', scheduleRefresh);

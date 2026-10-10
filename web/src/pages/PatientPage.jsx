@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api, post } from '../api.js';
-import { setTimezone, STEP_LABEL, time, VISIT_LABEL } from '../format.js';
+import { setCentreFormat, STEP_LABEL, time, VISIT_LABEL } from '../format.js';
 import { useAction } from '../toast.jsx';
 
 /** The patient's own page: no other patients' details, just progress and a realistic wait range. */
@@ -14,7 +14,7 @@ export default function PatientPage() {
   const load = useCallback(() => {
     api(`/public/visits/${token}`).then(
       (v) => {
-        setTimezone(v.centre.timezone);
+        setCentreFormat(v.centre);
         setView(v);
       },
       (e) => setError(e.message),

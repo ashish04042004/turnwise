@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
-import { ROLE_LABEL } from '../auth.jsx';
+import { useConfig } from '../config.jsx';
 import { clock, time } from '../format.js';
 import { useLive } from '../live.jsx';
 
@@ -21,15 +21,16 @@ const DESCRIBE = {
   'step.displaced': (p) => `${p.patient}'s ${p.service} lost its slot — ${p.reason}`,
   'resource.down': (p) => `${p.resource} unavailable until ${time(p.until)}${p.reason ? ` (${p.reason})` : ''}; ${p.displaced} affected`,
   'resource.up': (p) => `${p.resource} back in service`,
-  'staff.added': (p) => `${p.name} added as ${ROLE_LABEL[p.role] ?? p.role}`,
-  'staff.updated': (p) =>
+  'staff.added': (p, { roleLabel }) => `${p.name} added as ${roleLabel(p.role)}`,
+  'staff.updated': (p, { roleLabel }) =>
     p.active === false
       ? `${p.name} deactivated`
       : p.active === true
         ? `${p.name} reactivated`
         : p.role
-          ? `${p.name} is now ${ROLE_LABEL[p.role] ?? p.role}`
+          ? `${p.name} is now ${roleLabel(p.role)}`
           : `${p.name}'s ${p.changed.includes('pin') ? 'PIN was reset' : 'details changed'}`,
+  'settings.changed': (p) => `Setting ${p.key} ${p.reset ? 'reset to default' : 'changed'}: ${JSON.stringify(p.from)} → ${JSON.stringify(p.to)}`,
   'replan.proposed': (p) => `Re-plan proposed: ${p.trigger}`,
   'replan.applied': (p) => `Re-plan applied (${p.option}): ${p.moved} moved, ${p.unschedulable} without slot, decided in ${p.decisionSec}s`,
   'replan.rejected': () => 'Re-plan dismissed',
@@ -44,6 +45,7 @@ const tone = (type) => (/down|displaced|no_show|unclaimed|expired|revoked/.test(
 
 export default function ActivityPage() {
   const { lastEvent } = useLive();
+  const labels = useConfig();
   const [events, setEvents] = useState([]);
   const [filter, setFilter] = useState('');
 
@@ -64,6 +66,8 @@ export default function ActivityPage() {
           <option value="visit">Visits</option>
           <option value="booking">Bookings</option>
           <option value="waitlist">Waitlist</option>
+          <option value="staff">Staff</option>
+          <option value="settings">Settings</option>
         </select>
       </div>
       <p className="muted small">Every scheduling change is recorded in the same transaction as the change itself. Dashboards replay from this log after reconnecting.</p>
@@ -72,7 +76,7 @@ export default function ActivityPage() {
           <li key={e.id} className={tone(e.type)}>
             <span className="ev-time">{clock(e.created_at)}</span>
             <span className="ev-type">{e.type}</span>
-            <span className="ev-text">{(DESCRIBE[e.type] ?? (() => JSON.stringify(e.payload)))(e.payload)}</span>
+            <span className="ev-text">{(DESCRIBE[e.type] ?? (() => JSON.stringify(e.payload)))(e.payload, labels)}</span>
             <span className="ev-actor">{e.actor}</span>
           </li>
         ))}

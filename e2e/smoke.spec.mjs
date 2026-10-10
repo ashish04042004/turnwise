@@ -75,3 +75,33 @@ test('a wrong PIN is refused and pages respect roles', async ({ page }) => {
   await page.getByRole('link', { name: 'Staff' }).click();
   await expect(page.getByRole('cell', { name: /Asha Menon/ })).toBeVisible();
 });
+
+test('each centre signs in its own staff, and a manager tunes its settings', async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('Centre').selectOption({ label: 'Bandra West Imaging & Labs · Mumbai' });
+  await expect(page.getByText(/Neha Shah \(manager\) 5555/)).toBeVisible();
+  await expect(page.getByRole('button', { name: /Asha Menon/ })).toHaveCount(0);
+  await page.getByRole('button', { name: /Neha Shah/ }).click();
+  await page.getByLabel('PIN for Neha Shah').fill('5555');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.locator('.centre')).toContainText('Bandra West Imaging & Labs');
+
+  // Priority choices are this centre's own.
+  await page.getByRole('link', { name: 'Book & walk-in' }).click();
+  await expect(page.getByRole('option', { name: 'Same-day report' })).toHaveCount(1);
+
+  await page.getByRole('link', { name: 'Settings' }).click();
+  const row = page.locator('tr', { hasText: 'Slot search options' });
+  await row.getByRole('spinbutton').fill('99');
+  await expect(row.getByText('At most 20')).toBeVisible();
+  await expect(row.getByRole('button', { name: 'Save' })).toBeDisabled();
+  await row.getByRole('spinbutton').fill('4');
+  await row.getByRole('button', { name: 'Save' }).click();
+  await expect(page.locator('.toast').filter({ hasText: 'Slot search options saved' })).toBeVisible();
+  await row.getByRole('button', { name: 'Use default' }).click();
+  await expect(page.locator('.toast').filter({ hasText: 'back to the default' })).toBeVisible();
+  await expect(row.getByRole('spinbutton')).toHaveValue('5');
+
+  await page.getByRole('link', { name: 'Activity' }).click();
+  await expect(page.getByText(/Setting slot_search_options reset to default/).first()).toBeVisible();
+});

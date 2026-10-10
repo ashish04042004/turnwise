@@ -317,7 +317,7 @@ export async function getPatientView(token) {
     [raw.id],
   );
   return {
-    centre: { name: centre.name, city: centre.city, timezone: centre.timezone },
+    centre: { name: centre.name, city: centre.city, timezone: centre.timezone, locale: centre.locale },
     now: day.snap.clock.now,
     firstName: v.patient.split(' ')[0],
     status: v.status,

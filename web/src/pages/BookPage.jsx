@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { post } from '../api.js';
 import { useAuth } from '../auth.jsx';
+import { useConfig } from '../config.jsx';
 import { time } from '../format.js';
 import { useLive } from '../live.jsx';
 import { useAction } from '../toast.jsx';
@@ -19,17 +20,19 @@ function localInput(offsetMin = 0) {
 }
 
 function ServicePicker({ services, selected, onChange }) {
-  const groups = Object.groupBy ? Object.groupBy(services, (s) => s.category) : services.reduce((g, s) => ({ ...g, [s.category]: [...(g[s.category] ?? []), s] }), {});
+  const { categoryName, categoryClass } = useConfig();
+  const groups = new Map();
+  for (const s of services) groups.set(s.category, [...(groups.get(s.category) ?? []), s]);
   const toggle = (id) => onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
   return (
     <div className="service-picker">
-      {Object.entries(groups).map(([cat, list]) => (
+      {[...groups].map(([cat, list]) => (
         <fieldset key={cat}>
-          <legend>{cat}</legend>
+          <legend>{categoryName(cat)}</legend>
           {list.map((s) => (
             <label key={s.id} className={`svc ${selected.includes(s.id) ? 'on' : ''}`}>
               <input type="checkbox" checked={selected.includes(s.id)} onChange={() => toggle(s.id)} />
-              <span className={`chip cat-${s.category}`}>{s.code}</span>
+              <span className={`chip ${categoryClass(s.category)}`}>{s.code}</span>
               <span className="svc-name">{s.name}</span>
               <span className="muted">{s.duration_min} min</span>
             </label>
@@ -83,6 +86,7 @@ export default function BookPage() {
 
 function BookingDesk() {
   const { board } = useLive();
+  const { config } = useConfig();
   const run = useAction();
   const [mode, setMode] = useState('walk_in');
   const [name, setName] = useState('');
@@ -165,15 +169,17 @@ function BookingDesk() {
           </label>
           <label>
             Phone
-            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 9…" />
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={`${config?.settings.sim_phone_prefix ?? ''}…`} />
           </label>
           {mode !== 'waitlist' && (
             <label title="Configured by the centre for operational urgency; not a clinical judgement">
               Priority
               <select value={priority} onChange={(e) => setPriority(e.target.value)}>
-                <option value={0}>Standard</option>
-                <option value={3}>Elevated</option>
-                <option value={7}>Urgent (staff override)</option>
+                {(config?.priorityLevels ?? [{ level: 0, label: 'Standard' }]).map((p) => (
+                  <option key={p.level} value={p.level} title={p.description ?? undefined}>
+                    {p.label}
+                  </option>
+                ))}
               </select>
             </label>
           )}

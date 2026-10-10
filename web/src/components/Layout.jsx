@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { ROLE_LABEL, useAuth } from '../auth.jsx';
+import { useAuth } from '../auth.jsx';
+import { useConfig } from '../config.jsx';
 import { clock } from '../format.js';
 import { useLive } from '../live.jsx';
 
@@ -9,11 +10,13 @@ const NAV = [
   ['/analytics', 'Analytics'],
   ['/activity', 'Activity'],
   ['/staff', 'Staff', 'staff'],
+  ['/settings', 'Settings', 'settings'],
 ];
 
 export default function Layout() {
   const { board, connected, error } = useLive();
   const { staff, signOut, can } = useAuth();
+  const { roleLabel } = useConfig();
   return (
     <div className="app">
       <header className="topbar">
@@ -46,7 +49,7 @@ export default function Layout() {
             <div className="whoami">
               <span>
                 <strong>{staff.name}</strong>
-                <span>{ROLE_LABEL[staff.role]}</span>
+                <span>{roleLabel(staff.role)}</span>
               </span>
               <button type="button" className="btn btn-ghost btn-sm" onClick={signOut}>
                 Sign out

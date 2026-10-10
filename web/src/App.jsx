@@ -1,6 +1,7 @@
 import { Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth.jsx';
 import Layout from './components/Layout.jsx';
+import { ConfigProvider } from './config.jsx';
 import { LiveProvider } from './live.jsx';
 import { ToastProvider } from './toast.jsx';
 import ActivityPage from './pages/ActivityPage.jsx';
@@ -9,6 +10,7 @@ import BookPage from './pages/BookPage.jsx';
 import FloorPage from './pages/FloorPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import PatientPage from './pages/PatientPage.jsx';
+import SettingsPage from './pages/SettingsPage.jsx';
 import StaffPage from './pages/StaffPage.jsx';
 
 function StaffArea() {
@@ -17,7 +19,9 @@ function StaffArea() {
   if (!session) return <LoginPage />;
   return (
     <LiveProvider key={session.staff.id}>
-      <Layout />
+      <ConfigProvider>
+        <Layout />
+      </ConfigProvider>
     </LiveProvider>
   );
 }
@@ -34,6 +38,7 @@ export default function App() {
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="activity" element={<ActivityPage />} />
             <Route path="staff" element={<StaffPage />} />
+            <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Routes>
       </AuthProvider>

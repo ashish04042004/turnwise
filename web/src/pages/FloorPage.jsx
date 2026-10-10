@@ -1,4 +1,5 @@
 import { useAuth } from '../auth.jsx';
+import { time } from '../format.js';
 import { useLive } from '../live.jsx';
 import NextUp from '../components/NextUp.jsx';
 import ProposalPanel from '../components/ProposalPanel.jsx';
@@ -38,7 +39,7 @@ export default function FloorPage() {
         <div className="alerts">
           {board.alerts.map((a, i) => (
             <div key={i} className={`alert alert-${a.level}`}>
-              {a.text.replace(/until (\S+Z)/, (_, iso) => `until ${new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: board.centre.timezone })}`)}
+              {a.text.replace(/until (\S+Z)/, (_, iso) => `until ${time(iso)}`)}
             </div>
           ))}
         </div>

@@ -3,8 +3,6 @@ import { api, post, SIGNED_OUT } from './api.js';
 
 const AuthContext = createContext(null);
 
-export const ROLE_LABEL = { manager: 'Manager', reception: 'Front desk', technician: 'Technician' };
-
 /** The signed-in staff member and what their role allows. `session` is undefined while loading, null when signed out. */
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(undefined);

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { post } from '../api.js';
 import { useAuth } from '../auth.jsx';
+import { useConfig } from '../config.jsx';
 import { FLAG_LABEL, relative, STEP_LABEL, time, VISIT_LABEL } from '../format.js';
 import { useAction } from '../toast.jsx';
 import { useStartStep } from '../useStartStep.js';
@@ -15,6 +16,7 @@ function StepRow({ step, visit }) {
   const run = useAction();
   const startStep = useStartStep();
   const { can } = useAuth();
+  const { categoryClass } = useConfig();
   const late = step.delayMin >= 3 && step.status === 'scheduled';
   const canAct = can('floor') && ['arrived', 'in_progress'].includes(visit.status);
   const start = () => startStep(step.id, step.serviceCode);
@@ -22,7 +24,7 @@ function StepRow({ step, visit }) {
   return (
     <li className={`step step-${step.status}`}>
       <div className="step-main">
-        <span className={`chip cat-${step.category}`}>{step.serviceCode}</span>
+        <span className={`chip ${categoryClass(step.category)}`}>{step.serviceCode}</span>
         <span className="step-status">{STEP_LABEL[step.status]}</span>
         <span className="step-time">
           {step.status === 'completed' && `${time(step.actualStart)}–${time(step.actualEnd)}`}
@@ -70,13 +72,14 @@ function StepRow({ step, visit }) {
 function VisitCard({ visit, now }) {
   const run = useAction();
   const frontDesk = useAuth().can('frontDesk');
+  const { priorityLabel } = useConfig();
   return (
     <article className={`visit visit-${visit.status}`}>
       <header className="visit-head">
         <div>
           <div className="visit-name">
             {visit.patient}
-            {visit.priority > 0 && <span className="badge badge-priority">P{visit.priority}</span>}
+            {visit.priority > 0 && <span className="badge badge-priority">{priorityLabel(visit.priority)}</span>}
           </div>
           <div className="visit-meta">
             <span className={`badge badge-${visit.kind}`}>{visit.kind === 'walk_in' ? 'Walk-in' : visit.source === 'waitlist' ? 'Waitlist' : 'Appointment'}</span>

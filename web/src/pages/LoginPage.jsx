@@ -1,27 +1,45 @@
 import { useEffect, useState } from 'react';
 import { api, post } from '../api.js';
-import { ROLE_LABEL, useAuth } from '../auth.jsx';
+import { useAuth } from '../auth.jsx';
 
-const DEMO_PINS = { manager: '1234', reception: '1111', technician: '2222' };
+// The centre last signed in to on this device, so a shared front-desk screen opens on its own centre.
+const CENTRE_KEY = 'turnwise:centre';
 
 export default function LoginPage() {
   const { refresh } = useAuth();
-  const [staff, setStaff] = useState(null);
-  const [demo, setDemo] = useState(false);
+  const [centres, setCentres] = useState([]);
+  const [centreId, setCentreId] = useState(() => localStorage.getItem(CENTRE_KEY) ?? '');
+  const [directory, setDirectory] = useState(null);
   const [selected, setSelected] = useState(null);
   const [pin, setPin] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    api('/auth/staff').then(
-      (r) => {
-        setStaff(r.staff);
-        setDemo(r.demo);
-      },
-      (e) => setError(e.message),
-    );
+    api('/auth/centres').then((r) => setCentres(r.centres), () => undefined);
   }, []);
+
+  useEffect(() => {
+    // An unknown or deleted centre falls back to the default one.
+    const known = !centreId || centres.length === 0 || centres.some((c) => c.id === centreId);
+    let stale = false;
+    api(`/auth/staff${known && centreId ? `?centreId=${centreId}` : ''}`).then(
+      (r) => stale || setDirectory(r),
+      (e) => stale || setError(e.message),
+    );
+    return () => {
+      stale = true;
+    };
+  }, [centreId, centres]);
+
+  const staff = directory?.staff;
+  const roleLabel = (code) => directory?.roles.find((r) => r.code === code)?.label ?? code;
+  const chooseCentre = (id) => {
+    localStorage.setItem(CENTRE_KEY, id);
+    setCentreId(id);
+    setSelected(null);
+    setError(null);
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -48,11 +66,23 @@ export default function LoginPage() {
             <div className="muted small">Smarter turns. Smoother operations.</div>
           </div>
         </div>
+        {centres.length > 1 && (
+          <label className="login-centre">
+            Centre
+            <select value={directory?.centre.id ?? centreId} onChange={(e) => chooseCentre(e.target.value)}>
+              {centres.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} · {c.city}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <h1>Who’s signing in?</h1>
         {!staff && !error && <p className="muted">Loading staff…</p>}
         {staff?.length === 0 && (
           <p className="muted">
-            No staff accounts yet. Run <code>npm run seed</code> to create the demo centre.
+            No staff accounts yet. Run <code>npm run seed</code> to create the demo centres.
           </p>
         )}
         <div className="login-staff">
@@ -70,7 +100,7 @@ export default function LoginPage() {
               <span className="login-avatar">{s.name[0]}</span>
               <span>
                 <strong>{s.name}</strong>
-                <span className="muted small">{ROLE_LABEL[s.role]}</span>
+                <span className="muted small">{roleLabel(s.role)}</span>
               </span>
             </button>
           ))}
@@ -96,11 +126,7 @@ export default function LoginPage() {
           </form>
         )}
         {error && <p className="bad small">{error}</p>}
-        {demo && (
-          <p className="muted small login-hint">
-            Demo centre: manager {DEMO_PINS.manager} · front desk {DEMO_PINS.reception} · technician {DEMO_PINS.technician}
-          </p>
-        )}
+        {directory?.hint && <p className="muted small login-hint">{directory.hint}</p>}
       </div>
     </div>
   );

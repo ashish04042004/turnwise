@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { post } from '../api.js';
+import { useConfig } from '../config.jsx';
 import { useAction, useToast } from '../toast.jsx';
 
 /** Demo controls: run the floor on autopilot and inject the disruptions from the case study. */
 export default function ScenarioPanel() {
   const run = useAction();
   const toast = useToast();
+  const { config } = useConfig();
   const [auto, setAuto] = useState(false);
   const busy = useRef(false);
 
@@ -29,9 +31,16 @@ export default function ScenarioPanel() {
     return () => clearInterval(id);
   }, [auto, toast]);
 
+  const target = config?.settings.sim_breakdown_capability;
+  const equipment = config?.capabilities.find((c) => c.code === target)?.name ?? 'Equipment';
   const scenarios = [
     ['Walk-in rush', 'Three walk-ins arrive at once; they are placed concurrently.', () => post('/sim/walk-in-rush', { count: 3 }), (r) => `${r.created} walk-ins placed`],
-    ['Ultrasound breaks down', 'The busiest ultrasound machine goes down for 30 minutes.', () => post('/sim/breakdown', { minutes: 30 }), (r) => r.skipped ?? `${r.resource} down; ${r.displaced.length} affected`],
+    [
+      `${equipment} breaks down`,
+      `The busiest ${equipment.toLowerCase()} goes down for 30 minutes.`,
+      () => post('/sim/breakdown', { minutes: 30 }),
+      (r) => r.skipped ?? `${r.resource} down; ${r.displaced.length} affected`,
+    ],
     ['Scan overruns', 'A service in progress needs 15 more minutes.', () => post('/sim/overrun', { minutes: 15 }), (r) => r.skipped ?? `Overrun recorded; ${r.displaced.length} booking(s) displaced`],
     ['Patient cancels', 'A later booking cancels; the opening goes to the waitlist.', () => post('/sim/cancel'), (r) => r.skipped ?? `Cancelled; ${r.releasedSlots} slot(s) offered to the waitlist`],
   ];

@@ -1,18 +1,27 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, post } from '../api.js';
-import { ROLE_LABEL, useAuth } from '../auth.jsx';
+import { useAuth } from '../auth.jsx';
+import { useConfig } from '../config.jsx';
 import { useAction } from '../toast.jsx';
 
-const ROLES = Object.keys(ROLE_LABEL);
 const validPin = (pin) => /^\d{4,8}$/.test(pin);
 const patch = (id, body) => api(`/staff/${id}`, { method: 'PATCH', body });
+
+function RoleOptions() {
+  const { config } = useConfig();
+  return (config?.roles ?? []).map((r) => (
+    <option key={r.code} value={r.code}>
+      {r.label}
+    </option>
+  ));
+}
 
 function AddStaff({ onAdded }) {
   const run = useAction();
   const [name, setName] = useState('');
-  const [role, setRole] = useState('reception');
+  const [role, setRole] = useState('');
   const [pin, setPin] = useState('');
-  const valid = name.trim().length >= 2 && validPin(pin);
+  const valid = name.trim().length >= 2 && role && validPin(pin);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -33,11 +42,10 @@ function AddStaff({ onAdded }) {
       <label>
         Role
         <select value={role} onChange={(e) => setRole(e.target.value)}>
-          {ROLES.map((r) => (
-            <option key={r} value={r}>
-              {ROLE_LABEL[r]}
-            </option>
-          ))}
+          <option value="" disabled>
+            Choose…
+          </option>
+          <RoleOptions />
         </select>
       </label>
       <label>
@@ -53,6 +61,7 @@ function AddStaff({ onAdded }) {
 
 function StaffRow({ person, isSelf, onChanged }) {
   const run = useAction();
+  const { roleLabel } = useConfig();
   const [pin, setPin] = useState(null);
 
   const update = async (body, message) => {
@@ -69,13 +78,9 @@ function StaffRow({ person, isSelf, onChanged }) {
         <select
           value={person.role}
           disabled={isSelf || !person.active}
-          onChange={(e) => update({ role: e.target.value }, `${person.name} is now ${ROLE_LABEL[e.target.value]}; signed out everywhere`)}
+          onChange={(e) => update({ role: e.target.value }, `${person.name} is now ${roleLabel(e.target.value)}; signed out everywhere`)}
         >
-          {ROLES.map((r) => (
-            <option key={r} value={r}>
-              {ROLE_LABEL[r]}
-            </option>
-          ))}
+          <RoleOptions />
         </select>
       </td>
       <td>{person.active ? <span className="status status-in_progress">Active</span> : <span className="status status-cancelled">Deactivated</span>}</td>
