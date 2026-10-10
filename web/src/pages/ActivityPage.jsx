@@ -1,0 +1,71 @@
+import { useEffect, useState } from 'react';
+import { api } from '../api.js';
+import { clock, time } from '../format.js';
+import { useLive } from '../live.jsx';
+
+const DESCRIBE = {
+  'centre.seeded': () => 'Synthetic day generated',
+  'booking.held': (p) => `${p.patient} — slot held for ${time(p.start)}`,
+  'booking.confirmed': (p) => `${p.patient} — booking confirmed`,
+  'hold.expired': () => 'Unconfirmed hold expired; capacity released',
+  'hold.revoked': (p) => `${p.patient} — hold revoked (${p.reason})`,
+  'walkin.created': (p) => `${p.patient} walked in${p.unplaced?.length ? ` — no slot for ${p.unplaced.map((u) => u.serviceCode).join(', ')}` : ''}`,
+  'visit.checked_in': (p) => `${p.patient} checked in${p.lateMin > 5 ? ` (${p.lateMin} min late)` : ''}`,
+  'visit.cancelled': (p) => `${p.patient} cancelled${p.reason ? ` — ${p.reason}` : ''}`,
+  'visit.no_show': (p) => `${p.patient} marked no-show`,
+  'step.started': (p) => `${p.patient} started ${p.service}${p.lateMin > 2 ? ` (${p.lateMin} min late)` : ''}${p.forced ? ' — staff override' : ''}`,
+  'step.completed': (p) => `${p.patient} finished ${p.service} in ${p.durationMin} min`,
+  'step.extended': (p) => `${p.patient}'s ${p.service} extended by ${p.minutes} min${p.displaced ? `, displacing ${p.displaced}` : ''}`,
+  'step.displaced': (p) => `${p.patient}'s ${p.service} lost its slot — ${p.reason}`,
+  'resource.down': (p) => `${p.resource} unavailable until ${time(p.until)}${p.reason ? ` (${p.reason})` : ''}; ${p.displaced} affected`,
+  'resource.up': (p) => `${p.resource} back in service`,
+  'replan.proposed': (p) => `Re-plan proposed: ${p.trigger}`,
+  'replan.applied': (p) => `Re-plan applied (${p.option}): ${p.moved} moved, ${p.unschedulable} without slot, decided in ${p.decisionSec}s`,
+  'replan.rejected': () => 'Re-plan dismissed',
+  'waitlist.added': (p) => `${p.patient} joined the waitlist`,
+  'waitlist.offered': (p) => `Opening at ${time(p.start)} offered to ${p.patient}`,
+  'waitlist.booked': (p) => `Waitlist offer accepted — capacity recovered in ${p.recoveryMin} min`,
+  'waitlist.declined': () => 'Waitlist offer declined',
+  'capacity.unclaimed': (p) => `Opening ${time(p.start)}–${time(p.end)} had no eligible waitlist match`,
+};
+
+const tone = (type) => (/down|displaced|no_show|unclaimed|expired|revoked/.test(type) ? 'bad' : /replan|extended|offered/.test(type) ? 'warn' : /completed|booked|confirmed|applied|up$/.test(type) ? 'good' : '');
+
+export default function ActivityPage() {
+  const { lastEvent } = useLive();
+  const [events, setEvents] = useState([]);
+  const [filter, setFilter] = useState('');
+
+  useEffect(() => {
+    api('/events?limit=300').then(setEvents, () => undefined);
+  }, [lastEvent?.id]);
+
+  const shown = events.filter((e) => !filter || e.type.startsWith(filter));
+  return (
+    <section className="panel activity">
+      <div className="panel-head">
+        <h2>Audit trail</h2>
+        <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+          <option value="">All events</option>
+          <option value="replan">Re-planning</option>
+          <option value="resource">Resources</option>
+          <option value="step">Services</option>
+          <option value="visit">Visits</option>
+          <option value="booking">Bookings</option>
+          <option value="waitlist">Waitlist</option>
+        </select>
+      </div>
+      <p className="muted small">Every scheduling change is recorded in the same transaction as the change itself. Dashboards replay from this log after reconnecting.</p>
+      <ol className="events">
+        {shown.map((e) => (
+          <li key={e.id} className={tone(e.type)}>
+            <span className="ev-time">{clock(e.created_at)}</span>
+            <span className="ev-type">{e.type}</span>
+            <span className="ev-text">{(DESCRIBE[e.type] ?? (() => JSON.stringify(e.payload)))(e.payload)}</span>
+            <span className="ev-actor">{e.actor}</span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}

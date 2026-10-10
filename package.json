@@ -1,0 +1,26 @@
+{
+  "name": "turnwise",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Turnwise — live capacity and disruption coordination for diagnostic centres. Smarter turns. Smoother operations.",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "migrate": "npm run migrate -w server",
+    "seed": "npm run seed -w server",
+    "setup": "npm run migrate && npm run seed",
+    "dev": "concurrently -k -n api,worker,web -c cyan,magenta,green \"npm run dev -w server\" \"npm run worker -w server\" \"npm run dev -w web\"",
+    "test": "npm test -w server",
+    "loadtest": "npm run loadtest -w server",
+    "build": "npm run build -w web",
+    "start": "npm start -w server",
+    "start:worker": "npm run start:worker -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
