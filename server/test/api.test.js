@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 import { loginFailureKey } from '../src/auth.js';
-import { closeCache, resetCount } from '../src/cache.js';
+import { closeCache, invalidate, keys, resetCount } from '../src/cache.js';
 import { pool } from '../src/db.js';
 import { migrate } from '../src/migrate.js';
 import { provisionCentre } from '../src/services/provisioning.js';
@@ -37,6 +37,8 @@ beforeAll(async () => {
     ],
   });
   centreId = provisioned.centre.id;
+  // Test files run in parallel and share Redis, and no cache listener runs here: drop lists cached before this centre existed.
+  await invalidate(keys.centreList(), keys.defaultCentre());
   for (const s of provisioned.staff) staff[s.role] = s.id;
   server = createApp().listen(0);
   base = `http://127.0.0.1:${server.address().port}/api`;
