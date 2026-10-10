@@ -61,6 +61,8 @@ export function suggestNextUp({ now, resources, busy, candidates }) {
       service: c.service,
       kind: c.kind,
       dueAt: c.dueAt,
+      plannedStart: c.plannedStart,
+      bookedTimeReached: c.plannedStart != null && c.plannedStart <= now,
       waitingMin: Math.max(0, Math.round((now - c.dueAt) / 60_000)),
       resourceIds,
       swapped: resourceIds.some((id) => !c.reservedResourceIds.includes(id)),

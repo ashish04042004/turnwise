@@ -128,6 +128,10 @@ function shapeVisit(day, v) {
 }
 
 /** Steps that could start now: patient present and free, earlier tests done, required gap elapsed. */
+export async function getNextUp(centre) {
+  return nextUp(await loadSnapshot(pool, centre));
+}
+
 function nextUp(snap) {
   const now = snap.clock.now;
   const g = config.slotGranularityMin * 60_000;
@@ -174,6 +178,7 @@ function nextUp(snap) {
   return suggestNextUp({ now, resources: snap.resources, busy, candidates }).map((s) => ({
     ...s,
     dueAt: new Date(s.dueAt).toISOString(),
+    plannedStart: s.plannedStart == null ? null : new Date(s.plannedStart).toISOString(),
     resources: s.resourceIds.map((id) => names.get(id)),
   }));
 }

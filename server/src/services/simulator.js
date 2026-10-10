@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { pool } from '../db.js';
+import { getNextUp } from './board.js';
 import { getCentre } from './context.js';
 import { createWalkIn, releaseVisit } from './booking.js';
 import { checkIn, completeStep, extendStep, startStep } from './operations.js';
@@ -19,8 +20,8 @@ export const syntheticPhone = (seed = Math.random().toString()) => `+91 9${Strin
 
 /**
  * One step of the floor autopilot: patients arrive (some late, some never),
- * due services start when their resources free up, and services finish after
- * a realistic, sometimes overrunning, duration.
+ * staff call patients as "Next up" suggests, and services finish after a
+ * realistic, sometimes overrunning, duration.
  */
 export async function simTick(centreId) {
   const centre = await getCentre(pool, centreId);
@@ -59,15 +60,11 @@ export async function simTick(centreId) {
     }
   }
 
-  const { rows: ready } = await pool.query(
-    `SELECT s.id, sv.code, p.name FROM visit_steps s JOIN visits v ON v.id = s.visit_id
-     JOIN services sv ON sv.id = s.service_id JOIN patients p ON p.id = v.patient_id
-     WHERE v.centre_id = $1 AND s.status = 'scheduled' AND v.status IN ('arrived', 'in_progress')
-       AND lower(s.planned) <= now() + interval '1 minute'
-     ORDER BY lower(s.planned)`,
-    [centre.id],
-  );
-  for (const s of ready) await attempt(`${s.name} started ${s.code}`, () => startStep(centre, s.id, {}, 'simulator'));
+  // Staff follow "Next up": anything that moves nobody, or whose booked time has come.
+  for (const s of await getNextUp(centre)) {
+    if (s.bumps > 0 && !s.bookedTimeReached) continue;
+    await attempt(`${s.patient} started ${s.service}`, () => startStep(centre, s.stepId, {}, 'simulator'));
+  }
 
   return { actions };
 }

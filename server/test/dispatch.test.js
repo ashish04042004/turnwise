@@ -62,6 +62,7 @@ describe('next up', () => {
     const [s] = suggestNextUp({ now, resources, busy, candidates: [late] });
     expect(s.resourceIds).toEqual(['bay1']);
     expect(s.bumps).toBe(1);
+    expect(s.bookedTimeReached).toBe(true);
   });
 
   it('prefers a free identical resource over pushing anyone', () => {
