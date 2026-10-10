@@ -1,3 +1,4 @@
+import { useAuth } from '../auth.jsx';
 import { useLive } from '../live.jsx';
 import ProposalPanel from '../components/ProposalPanel.jsx';
 import QueueList from '../components/QueueList.jsx';
@@ -28,6 +29,7 @@ function Summary({ summary }) {
 
 export default function FloorPage() {
   const { board } = useLive();
+  const { can } = useAuth();
   return (
     <div className="floor">
       <Summary summary={board.summary} />
@@ -52,9 +54,11 @@ export default function FloorPage() {
           <section className="panel">
             <ResourcePanel resources={board.resources} />
           </section>
-          <section className="panel">
-            <ScenarioPanel />
-          </section>
+          {can('simulate') && (
+            <section className="panel">
+              <ScenarioPanel />
+            </section>
+          )}
         </div>
       </div>
     </div>

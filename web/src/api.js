@@ -7,12 +7,18 @@ export class ApiError extends Error {
   }
 }
 
+/** Fired when the session has expired or been revoked, so the app can show sign-in again. */
+export const SIGNED_OUT = 'turnwise:signed-out';
+
 export async function api(path, { method = 'GET', body } = {}) {
-  const headers = { 'x-actor': 'reception' };
+  const headers = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const res = await fetch(`/api${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const data = await res.json().catch(() => null);
-  if (!res.ok) throw new ApiError(res.status, data?.error);
+  if (!res.ok) {
+    if (res.status === 401 && !path.startsWith('/auth/')) window.dispatchEvent(new Event(SIGNED_OUT));
+    throw new ApiError(res.status, data?.error);
+  }
   return data;
 }
 

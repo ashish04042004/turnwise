@@ -1,16 +1,18 @@
 import { NavLink, Outlet } from 'react-router-dom';
+import { ROLE_LABEL, useAuth } from '../auth.jsx';
 import { clock } from '../format.js';
 import { useLive } from '../live.jsx';
 
 const NAV = [
   ['/', 'Floor'],
-  ['/book', 'Book & walk-in'],
+  ['/book', 'Book & walk-in', 'frontDesk'],
   ['/analytics', 'Analytics'],
   ['/activity', 'Activity'],
 ];
 
 export default function Layout() {
   const { board, connected, error } = useLive();
+  const { staff, signOut, can } = useAuth();
   return (
     <div className="app">
       <header className="topbar">
@@ -22,7 +24,7 @@ export default function Layout() {
           </div>
         </div>
         <nav className="nav">
-          {NAV.map(([to, label]) => (
+          {NAV.filter(([, , permission]) => !permission || can(permission)).map(([to, label]) => (
             <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => (isActive ? 'active' : '')}>
               {label}
             </NavLink>
@@ -39,6 +41,17 @@ export default function Layout() {
           <div className={`live ${connected ? 'on' : 'off'}`} title={connected ? 'Receiving live updates' : 'Reconnecting…'}>
             <span className="dot" /> {connected ? 'Live' : 'Offline'}
           </div>
+          {staff && (
+            <div className="whoami">
+              <span>
+                <strong>{staff.name}</strong>
+                <span>{ROLE_LABEL[staff.role]}</span>
+              </span>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={signOut}>
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
       </header>
       <main className="main">

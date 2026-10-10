@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { post } from '../api.js';
+import { useAuth } from '../auth.jsx';
 import { time } from '../format.js';
 import { useAction } from '../toast.jsx';
 
@@ -38,6 +39,7 @@ function DownForm({ resource, onDone }) {
 
 export default function ResourcePanel({ resources }) {
   const run = useAction();
+  const canReport = useAuth().can('resources');
   const [editing, setEditing] = useState(null);
   return (
     <>
@@ -67,7 +69,7 @@ export default function ResourcePanel({ resources }) {
               )}
               {r.state === 'idle' && <span className="muted">Free now</span>}
             </div>
-            {editing === r.id ? (
+            {!canReport ? null : editing === r.id ? (
               <DownForm resource={r} onDone={() => setEditing(null)} />
             ) : r.state === 'down' ? (
               <button className="btn btn-sm" onClick={() => run(() => post(`/resources/${r.id}/up`), `${r.name} back in service`)}>

@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { post } from '../api.js';
+import { useAuth } from '../auth.jsx';
 import { time } from '../format.js';
 import { useAction } from '../toast.jsx';
 
 /** Staff-facing re-plan decision: Turnwise proposes, a person approves. */
 export default function ProposalPanel({ proposal }) {
   const run = useAction();
+  const { can } = useAuth();
   const recommended = proposal.options.find((o) => o.recommended) ?? proposal.options[0];
   const [chosen, setChosen] = useState(recommended.key);
   const [busy, setBusy] = useState(false);
@@ -97,16 +99,22 @@ export default function ProposalPanel({ proposal }) {
         )}
       </div>
       <div className="proposal-actions">
-        <button
-          className="btn btn-primary"
-          disabled={busy}
-          onClick={() => act(() => post(`/proposals/${proposal.id}/apply`, { option: option.key }), (r) => `Applied: ${r.applied} service(s) re-timed, patients notified`)}
-        >
-          Apply “{option.title}”
-        </button>
-        <button className="btn btn-ghost" disabled={busy} onClick={() => act(() => post(`/proposals/${proposal.id}/reject`), 'Proposal dismissed')}>
-          Dismiss
-        </button>
+        {can('replan') ? (
+          <>
+            <button
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={() => act(() => post(`/proposals/${proposal.id}/apply`, { option: option.key }), (r) => `Applied: ${r.applied} service(s) re-timed, patients notified`)}
+            >
+              Apply “{option.title}”
+            </button>
+            <button className="btn btn-ghost" disabled={busy} onClick={() => act(() => post(`/proposals/${proposal.id}/reject`), 'Proposal dismissed')}>
+              Dismiss
+            </button>
+          </>
+        ) : (
+          <span className="role-note">The front desk or a manager approves re-plans.</span>
+        )}
       </div>
     </section>
   );

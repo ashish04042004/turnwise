@@ -54,7 +54,7 @@ export async function startLiveHub() {
  * receives every event it missed from the audit log before live ones resume.
  */
 export async function streamHandler(req, res) {
-  const centre = await getCentre(pool);
+  const centre = await getCentre(pool, req.staff?.centre_id);
   res.set({
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',

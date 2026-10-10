@@ -17,7 +17,14 @@ function num(name, fallback) {
   return value;
 }
 
+const production = process.env.NODE_ENV === 'production';
+if (production && !process.env.SESSION_SECRET) throw new Error('SESSION_SECRET must be set in production');
+
 export const config = {
+  production,
+  /** Signs staff session cookies. The development fallback is public and must never be used for real data. */
+  sessionSecret: process.env.SESSION_SECRET || 'turnwise-development-only-secret',
+  sessionHours: num('SESSION_HOURS', 12),
   databaseUrl: process.env.DATABASE_URL ?? 'postgres://turnwise:turnwise@localhost:5433/turnwise',
   redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6380',
   port: num('PORT', 4100),

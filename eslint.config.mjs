@@ -7,7 +7,7 @@ export default [
   js.configs.recommended,
   {
     rules: {
-      'no-unused-vars': ['error', { argsIgnorePattern: '^_', caughtErrors: 'none' }],
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', ignoreRestSiblings: true, caughtErrors: 'none' }],
       eqeqeq: ['error', 'always', { null: 'ignore' }],
       'prefer-const': 'error',
     },

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { post } from '../api.js';
+import { useAuth } from '../auth.jsx';
 import { FLAG_LABEL, relative, STEP_LABEL, time, VISIT_LABEL } from '../format.js';
 import { useAction, useToast } from '../toast.jsx';
 
@@ -12,8 +13,9 @@ const TABS = {
 function StepRow({ step, visit }) {
   const run = useAction();
   const toast = useToast();
+  const { can } = useAuth();
   const late = step.delayMin >= 3 && step.status === 'scheduled';
-  const canAct = ['arrived', 'in_progress'].includes(visit.status);
+  const canAct = can('floor') && ['arrived', 'in_progress'].includes(visit.status);
 
   const start = async (force = false) => {
     try {
@@ -55,7 +57,7 @@ function StepRow({ step, visit }) {
             Start
           </button>
         )}
-        {step.status === 'in_service' && (
+        {step.status === 'in_service' && can('floor') && (
           <>
             <button className="btn btn-sm btn-primary" onClick={() => run(() => post(`/steps/${step.id}/complete`), `${step.serviceCode} completed`)}>
               Complete
@@ -81,6 +83,7 @@ function StepRow({ step, visit }) {
 
 function VisitCard({ visit, now }) {
   const run = useAction();
+  const frontDesk = useAuth().can('frontDesk');
   return (
     <article className={`visit visit-${visit.status}`}>
       <header className="visit-head">
@@ -122,17 +125,17 @@ function VisitCard({ visit, now }) {
           ))}
       </ul>
       <footer className="visit-actions">
-        {visit.status === 'booked' && (
+        {frontDesk && visit.status === 'booked' && (
           <button className="btn btn-sm btn-primary" onClick={() => run(() => post(`/visits/${visit.id}/check-in`), `${visit.patient} checked in`)}>
             Check in
           </button>
         )}
-        {visit.status === 'booked' && visit.flags.includes('late_arrival') && (
+        {frontDesk && visit.status === 'booked' && visit.flags.includes('late_arrival') && (
           <button className="btn btn-sm" onClick={() => run(() => post(`/visits/${visit.id}/no-show`), (r) => `Marked no-show; ${r.releasedSlots} slot(s) released to the waitlist`)}>
             No-show
           </button>
         )}
-        {['booked', 'arrived', 'held'].includes(visit.status) && (
+        {frontDesk && ['booked', 'arrived', 'held'].includes(visit.status) && (
           <button
             className="btn btn-sm btn-ghost"
             onClick={() => window.confirm(`Cancel ${visit.patient}'s visit?`) && run(() => post(`/visits/${visit.id}/cancel`, { reason: 'Cancelled at reception' }), (r) => `Cancelled; ${r.releasedSlots} slot(s) released`)}

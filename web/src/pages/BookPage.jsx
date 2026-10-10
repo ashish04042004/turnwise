@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { post } from '../api.js';
+import { useAuth } from '../auth.jsx';
 import { time } from '../format.js';
 import { useLive } from '../live.jsx';
 import { useAction } from '../toast.jsx';
@@ -68,6 +69,19 @@ function PlanList({ steps }) {
 }
 
 export default function BookPage() {
+  const { can } = useAuth();
+  if (!can('frontDesk')) {
+    return (
+      <div className="empty">
+        <h2>Front desk only</h2>
+        <p className="muted">Bookings, walk-ins and the waitlist are handled by front desk staff or a manager.</p>
+      </div>
+    );
+  }
+  return <BookingDesk />;
+}
+
+function BookingDesk() {
   const { board } = useLive();
   const run = useAction();
   const [mode, setMode] = useState('walk_in');

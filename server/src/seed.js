@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { hashPin } from './auth.js';
 import { pool, withTx } from './db.js';
 import { migrate } from './migrate.js';
 import { planSteps } from './domain/scheduler.js';
@@ -22,6 +23,13 @@ const RESOURCES = [
   ['Dr. Iyer (Radiologist)', 'staff', ['radiologist']],
   ['X-Ray Unit', 'equipment', ['xray']],
   ['Sunil (Radiographer)', 'staff', ['radiographer']],
+];
+
+/** Demo sign-ins; PINs are printed by the seed and shown on the sign-in screen in demo mode. */
+export const STAFF = [
+  ['Asha Menon', 'manager', '1234'],
+  ['Ravi Kumar', 'reception', '1111'],
+  ['Farah Khan', 'technician', '2222'],
 ];
 
 const SERVICES = [
@@ -105,6 +113,10 @@ export async function seed({ quiet = false } = {}) {
     );
     const opensAt = win[0].opens.getTime();
     const closesAt = win[0].closes.getTime();
+
+    for (const [name, role, pin] of STAFF) {
+      await tx.query(`INSERT INTO staff (centre_id, name, role, pin_hash) VALUES ($1, $2, $3, $4)`, [centreId, name, role, hashPin(pin)]);
+    }
 
     const resources = [];
     for (const [i, [name, kind, caps]] of RESOURCES.entries()) {
@@ -271,6 +283,7 @@ export async function seed({ quiet = false } = {}) {
     log(`Seeded "Sector 18 Diagnostics" (Noida) — hours ${hours.opens}–${hours.closes} IST${hours.shifted ? ' (shifted so the demo has a past and a future)' : ''}`);
     log(`  ${resources.length} resources, ${services.size} services, ${counts.visits} visits today:`, counts);
     log(`  ${waitlist.length} patients on the waitlist`);
+    log(`  Demo staff sign-in: ${STAFF.map(([name, role, pin]) => `${name} (${role}) PIN ${pin}`).join(' · ')}`);
     return { centreId, counts };
   });
 }
