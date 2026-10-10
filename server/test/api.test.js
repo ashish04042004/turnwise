@@ -24,6 +24,8 @@ beforeAll(async () => {
     hours: { opens: '00:00', closes: '23:59' },
     // Sorts after real centres, so it never becomes the default.
     displayOrder: 1000,
+    // PIN sign-in from any device, like the public demo centres.
+    demo: true,
     staff: [
       { name: 'Test reception', role: 'reception', pin: '1111' },
       { name: 'Test technician', role: 'technician', pin: '2222' },

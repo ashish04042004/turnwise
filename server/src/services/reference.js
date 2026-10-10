@@ -6,7 +6,7 @@ const ttl = () => config.cache.configSeconds;
 const CENTRE_ORDER = 'display_order, created_at, name';
 const num = (x) => (x == null ? null : Number(x));
 
-/** Global reference data: roles and what they may do, setting definitions, synthetic name pools. */
+/** Global reference data: role templates for new centres, permissions, setting definitions, synthetic name pools. */
 export function getReference() {
   return cached(keys.reference(), ttl(), async () => {
     const [roles, permissions, grants, definitions, names] = await Promise.all([
@@ -41,8 +41,9 @@ export function getReference() {
   });
 }
 
-export async function permissionsOf(role) {
-  return (await getReference()).roles.find((r) => r.code === role)?.permissions ?? [];
+/** What a role at a centre may do. Each centre edits its own roles. */
+export async function permissionsOf(centreId, role) {
+  return (await getCentre(centreId)).roles.find((r) => r.code === role)?.permissions ?? [];
 }
 
 /** Every setting with the centre's override applied over the definition's default. */
@@ -55,7 +56,7 @@ async function loadCentre(centreId) {
   const { rows } = await pool.query('SELECT * FROM centres WHERE id = $1', [centreId]);
   if (!rows[0]) throw notFound('Centre');
   const q = (sql) => pool.query(sql, [centreId]).then((r) => r.rows);
-  const [reference, overrides, categories, capabilities, priorityLevels, templates, mixes] = await Promise.all([
+  const [reference, overrides, categories, capabilities, priorityLevels, templates, mixes, roles] = await Promise.all([
     getReference(),
     q('SELECT key, value FROM centre_settings WHERE centre_id = $1'),
     q('SELECT code, name, sort_order FROM service_categories WHERE centre_id = $1 ORDER BY sort_order, code'),
@@ -67,6 +68,15 @@ async function loadCentre(centreId) {
        WHERE t.channel = 'sms'`,
     ),
     q('SELECT purpose, weight, service_codes FROM demand_mixes WHERE centre_id = $1 ORDER BY id'),
+    q(
+      `SELECT r.code, r.label, r.description, r.sort_order,
+              COALESCE(array_agg(p.permission_code ORDER BY p.permission_code) FILTER (WHERE p.permission_code IS NOT NULL), '{}') AS permissions
+       FROM centre_roles r
+       LEFT JOIN centre_role_permissions p ON p.centre_id = r.centre_id AND p.role_code = r.code
+       WHERE r.centre_id = $1
+       GROUP BY r.code, r.label, r.description, r.sort_order
+       ORDER BY r.sort_order, r.code`,
+    ),
   ]);
   const demand = { appointment: [], walk_in: [], waitlist: [] };
   for (const m of mixes) demand[m.purpose].push({ weight: Number(m.weight), services: m.service_codes });
@@ -78,11 +88,16 @@ async function loadCentre(centreId) {
     priorityLevels: priorityLevels.length ? priorityLevels : [{ level: 0, label: 'Standard', description: null }],
     templates: Object.fromEntries(templates.map((t) => [t.key, t.body])),
     demand,
+    roles: roles.map((r) => ({ code: r.code, label: r.label, description: r.description, sortOrder: r.sort_order, permissions: r.permissions })),
   };
 }
 
 async function defaultCentreId() {
-  const id = await cached(keys.defaultCentre(), ttl(), async () => (await pool.query(`SELECT id FROM centres ORDER BY ${CENTRE_ORDER} LIMIT 1`)).rows[0]?.id ?? null);
+  const id = await cached(
+    keys.defaultCentre(),
+    ttl(),
+    async () => (await pool.query(`SELECT id FROM centres ORDER BY is_demo DESC, ${CENTRE_ORDER} LIMIT 1`)).rows[0]?.id ?? null,
+  );
   if (!id) throw notFound('Centre (run `npm run seed`)');
   return id;
 }
@@ -105,6 +120,7 @@ export async function getCentre(centreId) {
   }
 }
 
+/** Demo centres, for the public sign-in screen. Other centres are private to their members. */
 export function listCentres() {
-  return cached(keys.centreList(), ttl(), async () => (await pool.query(`SELECT id, name, city FROM centres ORDER BY ${CENTRE_ORDER}`)).rows);
+  return cached(keys.centreList(), ttl(), async () => (await pool.query(`SELECT id, name, city FROM centres WHERE is_demo ORDER BY ${CENTRE_ORDER}`)).rows);
 }

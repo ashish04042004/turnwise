@@ -38,6 +38,7 @@ beforeAll(async () => {
     city: 'Test',
     hours: { opens: '00:00', closes: '23:59' },
     displayOrder: 1001,
+    demo: true,
     staff: [
       { name: 'Cat manager', role: 'manager', pin: '3333' },
       { name: 'Cat reception', role: 'reception', pin: '1111' },

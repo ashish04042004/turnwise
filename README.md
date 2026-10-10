@@ -2,7 +2,7 @@
 
 **Smarter turns. Smoother operations.**
 
-**Live demo:** [turnwise.onrender.com](https://turnwise.onrender.com). Sign in as Asha with PIN `1234`. It runs on a free plan, so the first visit after a quiet spell takes about a minute to wake up.
+**Live demo:** [turnwise.onrender.com](https://turnwise.onrender.com). Sign in as Asha with PIN `1234`, or create an account and set up your own centre. It runs on a free plan, so the first visit after a quiet spell takes about a minute to wake up.
 
 Turnwise is a live operating system for a diagnostic centre's limited resources: machines, rooms and the staff who run them. It is not an appointment-booking app. It treats appointments and walk-ins as one queue, places every test only when *all* the resources it needs are free together, and keeps the plan honest as reality drifts. When a machine breaks, a service overruns or a patient cancels, staff get a concrete, checked alternative to approve instead of a phone call and a spreadsheet.
 
@@ -26,6 +26,7 @@ Stack: **PERN in plain JavaScript**. That is PostgreSQL, Express 5, React (Vite)
 | Patient view | A token link shows the next test, a wait range and any pending offer. It updates live. |
 | Analytics | Wait p50/p90, utilisation, estimate error, disruption counts, cancellation → rebooked time, delivery reliability and API latency. All of it is computed from recorded events. |
 | Catalogue | Managers add and edit machines, rooms and people, the services patients can book (duration, what each needs, ordering rules), categories, capabilities, priority levels and opening hours. Taking a resource out of service, or removing a capability that upcoming bookings relied on, moves exactly those bookings into a re-plan proposal. Retired services stop being offered while history stays intact. |
+| Accounts and access | Anyone can sign up with an email and password, then create a centre (blank, or from the sample catalogue) and manage it, or ask to join a colleague's centre with its join code for a manager to approve. One account can work at several centres. Each centre edits its own roles: add a role, tick what it may do, and access changes at once. Shared front-desk computers keep the quick PIN switch once a manager enrols them as terminals. |
 
 <p>
   <img src="docs/patient.png" width="260" alt="Patient view">
@@ -38,6 +39,13 @@ Stack: **PERN in plain JavaScript**. That is PostgreSQL, Express 5, React (Vite)
 </p>
 
 <p><img src="docs/staff.png" width="640" alt="Staff management for managers"></p>
+
+<p>
+  <img src="docs/signup.png" width="400" alt="Create an account">
+  <img src="docs/account.png" width="420" alt="Account: your centres, create one or join with a code">
+</p>
+
+<p><img src="docs/roles.png" width="640" alt="Roles: each centre adds roles and ticks what each may do"></p>
 
 <p><img src="docs/settings.png" width="640" alt="Per-centre settings, stored in the database and applied live"></p>
 
@@ -66,7 +74,9 @@ Open http://localhost:5173, pick a centre and sign in. The demo staff come from 
 | | Farah Khan | Technician | 2222 | Start, complete and extend services; report machines unavailable |
 | Bandra West Imaging & Labs | Neha Shah / Kiran Patil / Joseph D'Souza | Manager / Front desk / Technician | 5555 / 3333 / 4444 | Same roles at a CT and mammography centre with its own priority levels, wording and settings |
 
-Everyone can see the floor, analytics and activity. What each role may do is data (the `role_permissions` table), not code.
+Everyone can see the floor, analytics and activity. What each role may do is data, not code: each centre has its own roles (`centre_roles`, `centre_role_permissions`), copied from templates when it is created, and managers edit them on **Roles**.
+
+The two seeded centres are *demo centres*: listed on the sign-in screen, open to PIN sign-in from any device, and rebuilt by every seed. For anything else, choose **Email account → Create an account**. You can then create a centre (you become its manager) or enter a colleague's join code and wait for their approval. Centres created this way are private: they are not listed, PIN sign-in works only on devices a manager enrolled under **Staff → Shared terminals**, and seeding never touches them.
 
 ### Run everything in containers
 
@@ -82,8 +92,8 @@ This starts Postgres, Redis, a one-shot `migrate` job, the API (which also serve
 | `npm test` | Planner, projection, comparison, Postgres integration and HTTP auth tests (Vitest) |
 | `npm run lint` | ESLint over server and web |
 | `npm run loadtest` | Concurrency stress test against an isolated temporary centre |
-| `npm run e2e` | Browser smoke test (Playwright) against the built app and seeded demo centres: front desk adds a walk-in, a technician starts and completes it, roles are enforced, a second centre signs in its own staff, a manager changes and resets a setting, and a manager adds a machine and a service that front desk can then book, then retires it. Run `npm run build` and `npm run seed` first. Set `E2E_CHANNEL=msedge` or `chrome` to use an installed browser. |
-| `npm run seed` | Replace all centres with the ones in `SEED_FIXTURE` (default `server/fixtures/demo.json`) and generate a synthetic day at each from its own demand mixes |
+| `npm run e2e` | Browser smoke test (Playwright) against the built app and seeded demo centres: front desk adds a walk-in, a technician starts and completes it, roles are enforced, a second centre signs in its own staff, a manager changes and resets a setting, a manager adds a machine and a service that front desk can then book, then retires it, and a new account creates a centre, adds a role and approves a colleague who joined with the code. Run `npm run build` and `npm run seed` first. Set `E2E_CHANNEL=msedge` or `chrome` to use an installed browser. |
+| `npm run seed` | Replace the demo centres with the ones in `SEED_FIXTURE` (default `server/fixtures/demo.json`) and generate a synthetic day at each from its own demand mixes |
 
 ### Deploy for free (Render)
 
@@ -98,14 +108,14 @@ A free plan allows one web service, so the Blueprint switches on single-service 
 - **`DEMO_AUTO_REFRESH`**: the demo seeds itself on first start. It re-seeds once when the day rolls over and once each time the default centre opens or closes, so a visitor always sees a coherent day. It checks on boot and every 10 minutes, and an advisory lock stops two instances seeding at once.
 - **`TRUST_PROXY=1`**: client addresses come from Render's proxy, so sign-in rate limits apply per visitor.
 
-Keep `DEMO_AUTO_REFRESH` off anywhere the data matters, because a re-seed replaces every centre.
+A re-seed replaces only the demo centres; centres people created with an account are kept. Even so, keep `DEMO_AUTO_REFRESH` off anywhere the data matters.
 
 The free tier has trade-offs:
 
 - **Sleep.** The service sleeps after about 15 idle minutes, and the first request after that takes roughly a minute while it wakes.
 - **Database expiry.** Render's free Postgres expires after 30 days. Point `DATABASE_URL` at another free Postgres such as Neon or Supabase to keep it longer; `MIGRATE_ON_START` sets up the schema.
 - **Key Value is not persisted.** That's harmless here: Postgres is the source of truth, and the queue and caches rebuild.
-- **Public PINs.** The demo PINs are in this README and the data is synthetic, so treat a public deployment as a showcase only.
+- **Public PINs and open sign-up.** The demo PINs are in this README, anyone can create an account, and the data is synthetic, so treat a public deployment as a showcase only. Sign-ups are rate-limited per address (`SIGNUPS_PER_HOUR`).
 
 ### Five-minute demo
 
@@ -115,6 +125,7 @@ The free tier has trade-offs:
 4. Click **Patient cancels**, then look at **Book & walk-in → Waitlist**. A compatible waitlisted patient receives a time-limited offer.
 5. Open **Analytics** and **Activity** to see the measured effect and the audit trail.
 6. Open **Catalogue**. Add a machine and a service that needs it, and it is bookable on **Book & walk-in** at once. Take a busy machine out of service, and its upcoming bookings land in a re-plan proposal on the Floor.
+7. Sign out, choose **Email account → Create an account**, and create a centre from the sample catalogue. On **Roles**, add a "Shift lead" who can only work the front desk. On **Staff**, copy the join code; in a private window, create a second account, ask to join with the code, and approve them as Shift lead. Their menu shows exactly what the role allows.
 
 ## Architecture
 
@@ -161,7 +172,7 @@ When capacity disappears, only the bookings that actually conflict are displaced
 **4. Configuration is data, and the cache never decides a booking.**
 Everything that differs between centres lives in Postgres, including:
 
-- Roles and permissions.
+- Roles and what each may do, per centre.
 - Typed settings with defaults and bounds (`setting_definitions`), overridden per centre (`centre_settings`).
 - Service categories and their order.
 - Capabilities and priority levels.
@@ -178,7 +189,14 @@ All of this is served from a two-tier read cache: process memory, plus Redis sha
 - **Redis is optional.** If it is down, reads fall back to memory and Postgres.
 - **Bookings stay live.** Anything a booking decision depends on (reservations, steps, resource state) is read inside the transaction that acts on it, never from the cache.
 
-**Who did what is not self-reported.** Staff sign in with a PIN (scrypt-hashed). The server issues an HMAC-signed, HttpOnly, SameSite=Lax session cookie, and the audit actor is taken from that session. A per-person session version is bumped on sign-out, which revokes every outstanding token for that person. Failed sign-ins are rate-limited per client address, with the count shared through Redis so it holds across API replicas. Every staff request acts on the signer's own centre, and each mutation is gated by a permission checked against `role_permissions`. When a manager changes someone's role, PIN or active status, that person's session version moves on, so they lose access on every device immediately rather than when a token expires. A centre can't be left without an active person who can manage staff, and managers can't demote or deactivate themselves. Both checks run under a row lock, so two managers can't demote each other at the same moment.
+**Who did what is not self-reported.** People sign in with an email account (password) or, on a shared terminal, a PIN; both are scrypt-hashed. The server issues an HMAC-signed, HttpOnly, SameSite=Lax session cookie naming the account, the staff membership it acts as, and a session version for each, and the audit actor is taken from that session. Failed sign-ins are rate-limited per client address, with the count shared through Redis so it holds across API replicas.
+
+- **Accounts and memberships.** A user is a person; a staff row is their membership of one centre and carries the role, so one account can work at several centres and switch between them. Joining is by the centre's join code and a manager's approval, never by self-assignment.
+- **Per-centre roles.** Each mutation is gated by a permission checked against the caller's role *at their own centre*. Role changes are invalidated through the same triggers as other configuration, so a ticked or unticked permission applies on the next request without anyone signing in again.
+- **No escalation.** Someone who can manage staff but not roles can only hand out (or take away) roles whose permissions they hold themselves.
+- **No lockout.** Every access change runs under a per-centre advisory lock and is rejected if the centre would be left without an active person who can manage roles and one who can manage staff. Managers can't change their own role or deactivate themselves.
+- **Revocation.** Changing someone's role, PIN or active status moves their staff session version on, so they lose access on every device immediately. Changing a password or choosing *Sign out everywhere* moves the account's version. A plain sign-out forgets the session on that device; on a shared terminal it also revokes the PIN session.
+- **Shared terminals.** PIN sign-in works on the demo centres and, elsewhere, only on devices a manager enrolled (a signed, revocable device cookie checked against the `terminals` table). Private centres never expose their staff list.
 
 **Live updates survive reconnects.** Events are rows first. A trigger calls `pg_notify`, and the SSE hub forwards it. A reconnecting browser sends `Last-Event-ID` and gets the missed events replayed from the table, or a `reset` if it was gone too long.
 
@@ -231,11 +249,11 @@ On the seeded synthetic day, estimate error is around 4 min p50 and 6 min p90. T
 ## Limitations and next steps
 
 - Single-day horizon per centre. Planning is greedy list scheduling with local backtracking, not a global optimiser.
-- Sign-in is PIN-based for a shared front-desk terminal. A larger deployment would want SSO.
+- Accounts use email and password with no email verification or password reset by email yet; a larger deployment would want verified email, SSO and two-factor sign-in.
 - Changing a service's duration or needs applies to new bookings; existing bookings keep the slot they were given. Demand mixes (used only to generate synthetic demand) and message wording are still edited in fixtures or SQL, and the cache picks up hand edits too.
 - Notifications are simulated. In production an SMS/WhatsApp provider would sit behind the same outbox.
 - Clinical priority is a staff decision. Turnwise orders by the priority staff set and never infers it.
 
 ## Data
 
-Every centre, staff member, name, phone number and visit is synthetic. Centres and name pools come from `server/fixtures/demo.json`, and visits are generated deterministically from each centre's demand mixes by the seed and simulator. To demo a different centre, write another fixture and run `SEED_FIXTURE=fixtures/yours.json npm run seed`. Do not load real patient records into this project.
+Every demo centre, staff member, name, phone number and visit is synthetic, and centres people create should stay that way: the sign-up and account screens say so. Centres and name pools come from `server/fixtures/demo.json`, and visits are generated deterministically from each centre's demand mixes by the seed and simulator. To demo a different centre, write another fixture and run `SEED_FIXTURE=fixtures/yours.json npm run seed`. Do not load real patient records into this project.

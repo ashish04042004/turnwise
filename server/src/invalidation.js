@@ -10,6 +10,7 @@ import { onReconnect, subscribe } from './pgListener.js';
 export async function startCacheInvalidation() {
   onReconnect(() => invalidateLocal(() => true));
   await subscribe('turnwise_config', async ({ table, centreId, id }) => {
+    if (table === 'users') return invalidate(keys.user(id));
     // Global reference data (roles, permissions, setting defaults, names) or a truncate: everything may be stale.
     if (!centreId) return invalidateAll();
     const drop = [...centreKeys(centreId), keys.centreList(), keys.defaultCentre()];

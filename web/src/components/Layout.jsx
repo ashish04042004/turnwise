@@ -11,12 +11,13 @@ const NAV = [
   ['/activity', 'Activity'],
   ['/staff', 'Staff', 'staff'],
   ['/catalogue', 'Catalogue', 'settings'],
+  ['/roles', 'Roles', 'roles'],
   ['/settings', 'Settings', 'settings'],
 ];
 
 export default function Layout() {
   const { board, connected, error } = useLive();
-  const { staff, signOut, can } = useAuth();
+  const { staff, user, signOut, can } = useAuth();
   const { roleLabel } = useConfig();
   return (
     <div className="app">
@@ -52,7 +53,12 @@ export default function Layout() {
                 <strong>{staff.name}</strong>
                 <span>{roleLabel(staff.role)}</span>
               </span>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={signOut}>
+              {user && (
+                <NavLink to="/account" className="btn btn-ghost btn-sm" title={`${user.email}: your centres and password`}>
+                  Account
+                </NavLink>
+              )}
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => signOut()}>
                 Sign out
               </button>
             </div>

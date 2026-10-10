@@ -43,6 +43,14 @@ const DESCRIBE = {
   'waitlist.booked': (p) => `Waitlist offer accepted — capacity recovered in ${p.recoveryMin} min`,
   'waitlist.declined': () => 'Waitlist offer declined',
   'capacity.unclaimed': (p) => `Opening ${time(p.start)}–${time(p.end)} had no eligible waitlist match`,
+  'centre.created': (p) => `Centre ${p.name} created${p.starter === 'sample' ? ' from the sample catalogue' : ''}`,
+  'roles.changed': (p) => `Role ${p.label} ${p.action}${p.permissions ? ` — can: ${p.permissions.join(', ') || 'nothing'}` : ''}`,
+  'join.requested': (p) => `${p.name} (${p.email}) asked to join`,
+  'join.approved': (p, { roleLabel }) => `${p.name} joined as ${roleLabel(p.role)}`,
+  'join.rejected': (p) => `${p.name}'s request to join was declined`,
+  'join.code_changed': (p) => (p.enabled ? 'New join code issued' : 'Join code turned off'),
+  'terminal.enrolled': (p) => `Shared terminal "${p.name}" enrolled for PIN sign-in`,
+  'terminal.revoked': (p) => `Shared terminal "${p.name}" revoked`,
 };
 
 const tone = (type) => (/down|displaced|no_show|unclaimed|expired|revoked/.test(type) ? 'bad' : /replan|extended|offered/.test(type) ? 'warn' : /completed|booked|confirmed|applied|up$/.test(type) ? 'good' : '');
@@ -57,7 +65,7 @@ export default function ActivityPage() {
     api('/events?limit=300').then(setEvents, () => undefined);
   }, [lastEvent?.id]);
 
-  const shown = events.filter((e) => !filter || e.type.startsWith(filter));
+  const shown = events.filter((e) => !filter || filter.split('|').some((prefix) => e.type.startsWith(prefix)));
   return (
     <section className="panel activity">
       <div className="panel-head">
@@ -73,6 +81,7 @@ export default function ActivityPage() {
           <option value="staff">Staff</option>
           <option value="settings">Settings</option>
           <option value="catalogue">Catalogue</option>
+          <option value="roles|join|terminal">Access</option>
         </select>
       </div>
       <p className="muted small">Every scheduling change is recorded in the same transaction as the change itself. Dashboards replay from this log after reconnecting.</p>

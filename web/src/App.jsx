@@ -4,6 +4,7 @@ import Layout from './components/Layout.jsx';
 import { ConfigProvider } from './config.jsx';
 import { LiveProvider } from './live.jsx';
 import { ToastProvider } from './toast.jsx';
+import AccountPage from './pages/AccountPage.jsx';
 import ActivityPage from './pages/ActivityPage.jsx';
 import AnalyticsPage from './pages/AnalyticsPage.jsx';
 import BookPage from './pages/BookPage.jsx';
@@ -11,6 +12,7 @@ import CataloguePage from './pages/CataloguePage.jsx';
 import FloorPage from './pages/FloorPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import PatientPage from './pages/PatientPage.jsx';
+import RolesPage from './pages/RolesPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import StaffPage from './pages/StaffPage.jsx';
 
@@ -18,6 +20,7 @@ function StaffArea() {
   const { session } = useAuth();
   if (session === undefined) return <div className="empty">Loading…</div>;
   if (!session) return <LoginPage />;
+  if (!session.staff) return <AccountPage />;
   return (
     <LiveProvider key={session.staff.id}>
       <ConfigProvider>
@@ -41,6 +44,8 @@ export default function App() {
             <Route path="staff" element={<StaffPage />} />
             <Route path="catalogue" element={<CataloguePage />} />
             <Route path="settings" element={<SettingsPage />} />
+            <Route path="roles" element={<RolesPage />} />
+            <Route path="account" element={<AccountPage />} />
           </Route>
         </Routes>
       </AuthProvider>

@@ -16,7 +16,8 @@
 import { Redis } from 'ioredis';
 import { config } from './config.js';
 
-const PREFIX = 'tw:v1:cache:';
+// Bump the version whenever a cached value changes shape, so a deploy never reads entries the previous release wrote.
+const PREFIX = 'tw:v2:cache:';
 const COUNTER_PREFIX = 'tw:v1:count:';
 const REDIS_RETRY_MS = 5000;
 
@@ -27,6 +28,7 @@ export const keys = {
   defaultCentre: () => 'centre:default',
   centreList: () => 'centres',
   staff: (staffId) => `staff:${staffId}`,
+  user: (userId) => `user:${userId}`,
   board: (centreId) => `board:${centreId}`,
   analytics: (centreId) => `analytics:${centreId}`,
   comparison: (centreId) => `comparison:${centreId}`,

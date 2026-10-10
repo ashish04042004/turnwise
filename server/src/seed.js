@@ -237,21 +237,27 @@ async function generateActivity(tx, provisioned, activity, names, now) {
   return counts;
 }
 
-/** Replaces every centre with the fixture's synthetic centres and a demo day at each. */
+/**
+ * Replaces the demo centres with the fixture's synthetic centres and a demo
+ * day at each. Centres people created for themselves are left alone.
+ */
 export async function seed({ quiet = false, fixture = config.seedFixture } = {}) {
   const log = quiet ? () => undefined : console.log;
   await migrate();
   const data = await loadFixture(fixture);
 
   return withTx(async (tx) => {
-    await tx.query('TRUNCATE centres, synthetic_names CASCADE');
+    await tx.query('SET CONSTRAINTS ALL DEFERRED');
+    await tx.query('DELETE FROM centres WHERE is_demo');
+    await tx.query('SET CONSTRAINTS ALL IMMEDIATE');
+    await tx.query('TRUNCATE synthetic_names');
     await loadSyntheticNames(tx, data.syntheticNames);
     const now = (await tx.query('SELECT now() AS now')).rows[0].now.getTime();
 
     const seeded = [];
     for (const [i, { activity, ...spec }] of data.centres.entries()) {
       const hours = demoHours(now, spec.timezone, spec.hours);
-      const provisioned = await provisionCentre(tx, { ...spec, hours: { opens: hours.opens, closes: hours.closes }, displayOrder: i });
+      const provisioned = await provisionCentre(tx, { ...spec, hours: { opens: hours.opens, closes: hours.closes }, displayOrder: i, demo: true });
       const counts = await generateActivity(tx, provisioned, activity, data.syntheticNames, now);
       seeded.push({ centreId: provisioned.centre.id, counts });
 

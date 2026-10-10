@@ -16,6 +16,9 @@ export const centreSpec = z
     timezone: z.string().default('Asia/Kolkata'),
     locale: z.string().default('en-IN'),
     displayOrder: z.number().int().default(0),
+    /** Demo centres are public on the sign-in screen, allow PIN sign-in anywhere, and are replaced by every seed. */
+    demo: z.boolean().default(false),
+    joinCode: z.string().regex(/^[A-Z0-9]{8}$/).nullable().optional(),
     hours: z.object({ opens: clock, closes: clock }),
     holdTtlSeconds: z.number().int().positive().optional(),
     offerTtlSeconds: z.number().int().positive().optional(),
@@ -27,7 +30,7 @@ export const centreSpec = z
       .array(z.object({ code, name: label('service name'), category: code, durationMin: z.number().int().positive(), requirements: z.array(code).min(1) }))
       .default([]),
     prerequisites: z.array(z.object({ service: code, requires: code, minGapMin: z.number().int().min(0).default(0) })).default([]),
-    staff: z.array(z.object({ name: label('staff name'), role: code, pin: z.string().regex(/^\d{4,8}$/) })).default([]),
+    staff: z.array(z.object({ name: label('staff name'), role: code, pin: z.string().regex(/^\d{4,8}$/).optional() })).default([]),
     priorityLevels: z
       .array(z.object({ level: z.number().int().min(0).max(10), label: label('priority label'), description: z.string().nullable().optional() }))
       .default([{ level: 0, label: 'Standard' }]),
@@ -70,8 +73,8 @@ export async function provisionCentre(db, input) {
   checkReferences(spec);
 
   const { rows: centreRows } = await db.query(
-    `INSERT INTO centres (name, city, timezone, locale, display_order, opens_at, closes_at, hold_ttl_seconds, offer_ttl_seconds, offer_lead_minutes)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, 120), COALESCE($9, 600), COALESCE($10, 20)) RETURNING *`,
+    `INSERT INTO centres (name, city, timezone, locale, display_order, opens_at, closes_at, hold_ttl_seconds, offer_ttl_seconds, offer_lead_minutes, is_demo, join_code)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, 120), COALESCE($9, 600), COALESCE($10, 20), $11, $12) RETURNING *`,
     [
       spec.name,
       spec.city,
@@ -83,10 +86,13 @@ export async function provisionCentre(db, input) {
       spec.holdTtlSeconds,
       spec.offerTtlSeconds,
       spec.offerLeadMinutes,
+      spec.demo,
+      spec.joinCode ?? null,
     ],
   );
   const centre = centreRows[0];
   const id = centre.id;
+  await copyRoleTemplates(db, id);
 
   const categories = new Map(spec.categories.map((c) => [c.code, c]));
   for (const s of spec.services) if (!categories.has(s.category)) categories.set(s.category, { code: s.category, name: titleCase(s.category), sortOrder: 99 });
@@ -131,7 +137,7 @@ export async function provisionCentre(db, input) {
       id,
       s.name,
       s.role,
-      hashPin(s.pin),
+      s.pin ? hashPin(s.pin) : null,
     ]);
     staff.push(rows[0]);
   }
@@ -165,6 +171,12 @@ export async function provisionCentre(db, input) {
   }
 
   return { centre, resources, services, staff, spec };
+}
+
+/** Gives a new centre its own editable copy of the role templates. */
+async function copyRoleTemplates(db, centreId) {
+  await db.query(`INSERT INTO centre_roles (centre_id, code, label, sort_order) SELECT $1, code, label, sort_order FROM roles`, [centreId]);
+  await db.query(`INSERT INTO centre_role_permissions (centre_id, role_code, permission_code) SELECT $1, role_code, permission_code FROM role_permissions`, [centreId]);
 }
 
 /** Adds synthetic name pools (idempotent). */

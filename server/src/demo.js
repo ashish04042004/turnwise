@@ -7,14 +7,14 @@ import { seed } from './seed.js';
  * default centre has opened or closed since it was generated. Comparing
  * phases (rather than "is it closed now") re-seeds once per transition, so
  * nobody's overnight clicks are wiped every few minutes. Looks at the
- * default centre unless given one.
+ * first demo centre unless given one; centres people created are never re-seeded.
  */
 export async function demoStaleness(centreId = null) {
   const { rows } = await pool.query(
     `WITH c AS (
        SELECT name, timezone, opens_at, closes_at - interval '30 minutes' AS winds_down,
               (SELECT max(e.created_at) FROM events e WHERE e.centre_id = centres.id AND e.type = 'centre.seeded') AS seeded_at
-       FROM centres WHERE $1::uuid IS NULL OR id = $1
+       FROM centres WHERE is_demo AND ($1::uuid IS NULL OR id = $1)
        ORDER BY display_order, created_at, name LIMIT 1
      )
      SELECT name, seeded_at,

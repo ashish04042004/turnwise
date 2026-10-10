@@ -2,11 +2,45 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { z, ZodError } from 'zod';
-import { actorOf, authenticate, login, logout, renewSession, requirePermission, requireStaff } from './auth.js';
+import {
+  actAs,
+  actorOf,
+  assertPinAllowed,
+  authenticate,
+  enrolDevice,
+  forgetDevice,
+  login,
+  loginWithPassword,
+  logout,
+  membershipsOf,
+  renewSession,
+  requirePermission,
+  requireStaff,
+  requireUser,
+  signupKey,
+  terminalOf,
+} from './auth.js';
+import { countHit } from './cache.js';
 import { config } from './config.js';
 import { HttpError, pool } from './db.js';
 import { latencyMiddleware, latencySummary } from './latency.js';
 import { liveClientCount, streamHandler } from './live.js';
+import {
+  accountSchemas as acct,
+  changePassword,
+  createCentre,
+  decideJoinRequest,
+  enrolTerminal,
+  getJoinCode,
+  listJoinRequests,
+  listTerminals,
+  pendingRequestsOf,
+  requestToJoin,
+  revokeTerminal,
+  setJoinCode,
+  signup,
+  withdrawRequest,
+} from './services/accounts.js';
 import { getAnalytics, getEvents } from './services/analytics.js';
 import { getBaselineComparison } from './services/comparison.js';
 import { getBoard, getPatientView } from './services/board.js';
@@ -31,6 +65,7 @@ import {
 import { checkIn, completeStep, extendStep, startStep } from './services/operations.js';
 import { getCentre, getReference, listCentres, permissionsOf } from './services/reference.js';
 import { applyProposal, generateProposal, markResourceDown, markResourceUp, rejectProposal } from './services/replan.js';
+import { addRole, deleteRole, listRoles, roleSchemas, updateRole } from './services/roles.js';
 import { listOverrides, resetSetting, updateSetting } from './services/settings.js';
 import { simBreakdown, simCancel, simOverrun, simTick, simWalkInRush } from './services/simulator.js';
 import { addStaff, listAllStaff, listStaff, updateStaff } from './services/staff.js';
@@ -80,11 +115,11 @@ const centreOf = (req) => getCentre(req.staff.centre_id);
 
 /** Everything the dashboard needs to render this centre: labels, options and settings, all from the database. */
 async function clientConfig(req) {
-  const [centre, reference, permissions] = await Promise.all([centreOf(req), getReference(), permissionsOf(req.staff.role)]);
+  const [centre, reference, permissions] = await Promise.all([centreOf(req), getReference(), permissionsOf(req.staff.centre_id, req.staff.role)]);
   const canConfigure = permissions.includes('settings');
   return {
-    centre: { id: centre.id, name: centre.name, city: centre.city, timezone: centre.timezone, locale: centre.locale },
-    roles: reference.roles.map(({ code, label }) => ({ code, label })),
+    centre: { id: centre.id, name: centre.name, city: centre.city, timezone: centre.timezone, locale: centre.locale, demo: centre.is_demo },
+    roles: centre.roles.map(({ code, label, permissions: granted }) => ({ code, label, permissions: granted })),
     permissions,
     categories: centre.categories,
     capabilities: centre.capabilities,
@@ -110,27 +145,81 @@ export function createApp() {
     res.json({ ok: true, liveClients: liveClientCount() });
   });
 
-  // Sign-in: pick a centre, then a person at it.
-  api.get('/auth/centres', async (_req, res) => res.json({ centres: await listCentres() }));
+  // Quick PIN switching: on the public demo centres, or on a terminal a centre enrolled.
+  api.get('/auth/centres', async (req, res) => {
+    const terminal = await terminalOf(req);
+    const home = terminal && (await getCentre(terminal.centre_id));
+    res.json({
+      centres: await listCentres(),
+      terminal: terminal && { name: terminal.name, centre: { id: home.id, name: home.name, city: home.city } },
+    });
+  });
   api.get('/auth/staff', async (req, res) => {
-    const centre = await getCentre(uuid.optional().parse(req.query.centreId || undefined));
-    const { roles } = await getReference();
+    const terminal = await terminalOf(req);
+    const centre = await getCentre(uuid.optional().parse(req.query.centreId || undefined) ?? terminal?.centre_id);
+    await assertPinAllowed(req, centre);
     res.json({
       centre: { id: centre.id, name: centre.name, city: centre.city },
       staff: await listStaff(centre.id),
-      roles: roles.map(({ code, label }) => ({ code, label })),
+      roles: centre.roles.map(({ code, label }) => ({ code, label })),
       hint: centre.settings.demo_sign_in_hint || null,
       demo: config.enableSimulator,
     });
   });
   api.post('/auth/login', async (req, res) => res.json({ staff: await login(req, res, schemas.login.parse(req.body)) }));
+
+  // Accounts: email and password, one account across any number of centres.
+  api.post('/auth/signup', async (req, res) => {
+    if ((await countHit(signupKey(req.ip), 3600)) > config.signupsPerHour) {
+      throw new HttpError(429, 'too_many_attempts', 'Too many new accounts from here; try again later');
+    }
+    const user = await signup(acct.signup.parse(req.body));
+    await actAs(res, user, null);
+    res.status(201).json({ user: { id: user.id, email: user.email, name: user.name } });
+  });
+  api.post('/auth/password-login', async (req, res) => res.json(await loginWithPassword(req, res, acct.login.parse(req.body))));
   api.post('/auth/logout', async (req, res) => {
-    await logout(req, res);
+    await logout(req, res, z.object({ everywhere: z.boolean().optional() }).parse(req.body ?? {}));
     res.json({ ok: true });
   });
-  api.get('/auth/me', requireStaff, async (req, res) => {
-    const { session_version: _v, ...staff } = req.staff;
-    res.json({ staff, permissions: await permissionsOf(staff.role) });
+  api.get('/auth/me', async (req, res) => {
+    if (!req.user && !req.staff) throw new HttpError(401, 'unauthenticated', 'Sign in to continue');
+    const [memberships, requests, permissions] = await Promise.all([
+      req.user ? membershipsOf(req.user.id) : [],
+      req.user ? pendingRequestsOf(req.user.id) : [],
+      req.staff ? permissionsOf(req.staff.centre_id, req.staff.role) : [],
+    ]);
+    const { session_version: _v, ...staff } = req.staff ?? {};
+    res.json({
+      user: req.user ? { id: req.user.id, email: req.user.email, name: req.user.name } : null,
+      staff: req.staff ? staff : null,
+      permissions,
+      memberships: memberships.map(({ session_version: _sv, ...m }) => m),
+      requests,
+    });
+  });
+
+  api.post('/account/centres', requireUser, async (req, res) => {
+    const created = await createCentre(req.user, acct.createCentre.parse(req.body));
+    await actAs(res, req.user, created);
+    res.status(201).json({ centreId: created.centreId });
+  });
+  api.post('/account/switch', requireUser, async (req, res) => {
+    const { centreId } = z.object({ centreId: uuid.nullable() }).parse(req.body);
+    const membership = centreId && (await membershipsOf(req.user.id)).find((m) => m.centreId === centreId);
+    if (centreId && !membership) throw new HttpError(403, 'forbidden', 'You are not a member of that centre');
+    await actAs(res, req.user, membership || null);
+    res.json({ centreId });
+  });
+  api.post('/account/join', requireUser, async (req, res) => res.status(201).json(await requestToJoin(req.user, acct.join.parse(req.body))));
+  api.delete('/account/requests/:id', requireUser, async (req, res) => {
+    await withdrawRequest(req.user, uuid.parse(req.params.id));
+    res.json({ ok: true });
+  });
+  api.put('/account/password', requireUser, async (req, res) => {
+    const user = await changePassword(req.user, acct.password.parse(req.body));
+    renewSession(res, { user, staff: req.staff });
+    res.json({ ok: true });
   });
 
   // Patient-facing links, authorised by their unguessable token.
@@ -243,15 +332,58 @@ export function createApp() {
 
   const manageStaff = requirePermission('staff');
   api.get('/staff', manageStaff, async (req, res) => res.json({ staff: await listAllStaff(req.staff.centre_id) }));
-  api.post('/staff', manageStaff, async (req, res) => res.status(201).json(await addStaff(req.staff.centre_id, schemas.addStaff.parse(req.body), actorOf(req))));
+  const by = (req) => ({ actor: actorOf(req), actorRole: req.staff.role });
+  api.post('/staff', manageStaff, async (req, res) => res.status(201).json(await addStaff(req.staff.centre_id, schemas.addStaff.parse(req.body), by(req))));
   api.patch('/staff/:id', manageStaff, async (req, res) => {
     const id = uuid.parse(req.params.id);
     const { centre_id: _c, session_version: version, ...updated } = await updateStaff(req.staff.centre_id, id, schemas.updateStaff.parse(req.body), {
-      actor: actorOf(req),
+      ...by(req),
       selfId: req.staff.id,
     });
-    if (id === req.staff.id) renewSession(res, { id, session_version: version });
+    if (id === req.staff.id) renewSession(res, { user: req.user, staff: { id, session_version: version } });
     res.json(updated);
+  });
+
+  // People asking to join with the centre's code, and the code itself.
+  api.get('/join-requests', manageStaff, async (req, res) => res.json({ requests: await listJoinRequests(req.staff.centre_id) }));
+  api.post('/join-requests/:id/approve', manageStaff, async (req, res) => {
+    const { role: granted } = acct.decide.parse(req.body);
+    res.json(await decideJoinRequest(req.staff.centre_id, uuid.parse(req.params.id), { approve: true, role: granted }, by(req)));
+  });
+  api.post('/join-requests/:id/reject', manageStaff, async (req, res) =>
+    res.json(await decideJoinRequest(req.staff.centre_id, uuid.parse(req.params.id), { approve: false }, by(req))),
+  );
+  api.get('/centre/join-code', manageStaff, async (req, res) => res.json(await getJoinCode(req.staff.centre_id)));
+  api.post('/centre/join-code', manageStaff, async (req, res) => res.json(await setJoinCode(req.staff.centre_id, true, actorOf(req))));
+  api.delete('/centre/join-code', manageStaff, async (req, res) => res.json(await setJoinCode(req.staff.centre_id, false, actorOf(req))));
+
+  // Shared front-desk terminals, where colleagues switch with a PIN.
+  api.get('/terminals', manageStaff, async (req, res) => {
+    const here = await terminalOf(req);
+    res.json({ terminals: await listTerminals(req.staff.centre_id), thisDevice: here?.centre_id === req.staff.centre_id ? here.id : null });
+  });
+  api.post('/terminals', manageStaff, async (req, res) => {
+    const terminal = await enrolTerminal(req.staff.centre_id, acct.terminal.parse(req.body), actorOf(req));
+    enrolDevice(res, terminal);
+    res.status(201).json({ id: terminal.id, name: terminal.name });
+  });
+  api.delete('/terminals/:id', manageStaff, async (req, res) => {
+    const id = uuid.parse(req.params.id);
+    await revokeTerminal(req.staff.centre_id, id, actorOf(req));
+    if ((await terminalOf(req))?.id === id) forgetDevice(res);
+    res.json({ ok: true });
+  });
+
+  // Each centre's own roles and what they may do.
+  const manageRoles = requirePermission('roles');
+  api.get('/roles', manageRoles, async (req, res) => res.json(await listRoles(req.staff.centre_id)));
+  api.post('/roles', manageRoles, async (req, res) => res.status(201).json(await addRole(req.staff.centre_id, roleSchemas.add.parse(req.body), actorOf(req))));
+  api.patch('/roles/:code', manageRoles, async (req, res) =>
+    res.json(await updateRole(req.staff.centre_id, roleSchemas.code.parse(req.params.code), roleSchemas.update.parse(req.body), actorOf(req))),
+  );
+  api.delete('/roles/:code', manageRoles, async (req, res) => {
+    await deleteRole(req.staff.centre_id, roleSchemas.code.parse(req.params.code), actorOf(req));
+    res.json({ ok: true });
   });
 
   if (config.enableSimulator) {

@@ -1612,6 +1612,205 @@ table.mini td {
   font-size: 13px;
 }
 
+/* Accounts, roles and access */
+.login-tabs {
+  margin: 4px 0 0;
+}
+.login-form.stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+.login-form.stacked input {
+  letter-spacing: normal;
+  font-size: 15px;
+}
+.login-form.stacked p {
+  margin: 0;
+}
+.link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--brand);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.terminal-badge {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--brand-soft);
+}
+.account-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 860px;
+}
+.account-page.standalone {
+  margin: 32px auto;
+  padding: 0 16px;
+}
+.account-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.account-head h1 {
+  margin: 0;
+  font-size: 22px;
+}
+.account-actions,
+.account-add {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.account-add {
+  margin-top: 12px;
+}
+.memberships,
+.join-requests,
+.terminals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.memberships li,
+.join-requests li,
+.terminals li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+.join-requests li > span {
+  flex: 1;
+  min-width: 220px;
+}
+.role-chip {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 12px;
+}
+.account-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  margin-top: 12px;
+}
+.account-form label {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+  min-width: 160px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.account-form label.wide {
+  flex: 3;
+}
+.account-form p {
+  flex-basis: 100%;
+  margin: 0;
+}
+.starter {
+  flex-basis: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+}
+.starter label {
+  display: block;
+  color: inherit;
+}
+.join-code {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.code-big {
+  font-size: 18px;
+  letter-spacing: 0.15em;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--brand-soft);
+}
+.roles-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1180px;
+}
+.table-scroll {
+  overflow-x: auto;
+}
+.roles-matrix th,
+.roles-matrix td {
+  text-align: center;
+  white-space: nowrap;
+}
+.roles-matrix th[scope='row'] {
+  text-align: left;
+  display: grid;
+  gap: 2px;
+  min-width: 180px;
+}
+.roles-matrix tr.dirty {
+  background: var(--amber-soft);
+}
+.role-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+.permission-key {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 6px 16px;
+  margin: 12px 0 0;
+}
+.permission-key dt {
+  font-weight: 600;
+}
+.permission-key dd {
+  margin: 0;
+}
+.add-role {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+.add-role > label {
+  display: grid;
+  gap: 4px;
+  min-width: 200px;
+}
+.add-role fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
 @media (max-width: 1100px) {
   .floor-grid,
   .book {

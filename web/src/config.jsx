@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api } from './api.js';
+import { useAuth } from './auth.jsx';
 import { useLive } from './live.jsx';
 
 const ConfigContext = createContext(null);
@@ -13,6 +14,7 @@ const CATEGORY_TONES = 6;
  */
 export function ConfigProvider({ children }) {
   const { lastEvent } = useLive();
+  const { refresh: refreshSession } = useAuth();
   const [config, setConfig] = useState(null);
 
   const reload = useCallback(() => api('/config').then(setConfig, () => undefined), []);
@@ -23,7 +25,12 @@ export function ConfigProvider({ children }) {
 
   useEffect(() => {
     if (lastEvent?.type === 'settings.changed' || lastEvent?.type === 'catalogue.changed') reload();
-  }, [lastEvent, reload]);
+    // What each role may do changed: the menu and buttons follow without signing in again.
+    if (lastEvent?.type === 'roles.changed') {
+      reload();
+      refreshSession();
+    }
+  }, [lastEvent, reload, refreshSession]);
 
   const value = useMemo(() => {
     const roles = new Map(config?.roles.map((r) => [r.code, r.label]));

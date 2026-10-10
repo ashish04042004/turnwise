@@ -146,3 +146,56 @@ test('a manager adds a machine and a service, front desk can book it, and retiri
   await page.getByRole('link', { name: 'Book & walk-in' }).click();
   await expect(page.locator('label.svc', { hasText: `BD_${tag}` })).toHaveCount(0);
 });
+
+async function signUp(page, name, email) {
+  await page.goto('/');
+  await page.getByRole('tab', { name: 'Email account' }).click();
+  await page.getByRole('button', { name: 'Create an account' }).click();
+  await page.getByLabel('Your name').fill(name);
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel(/^Password/).fill('correct horse battery');
+  await page.getByRole('button', { name: 'Create account' }).click();
+  await expect(page.getByRole('heading', { name: 'Your centres' })).toBeVisible();
+}
+
+test('someone signs up, creates a centre with its own role, and approves a colleague who joins with the code', async ({ page, browser }) => {
+  const tag = Date.now().toString(36);
+  const toast = (p, text) => expect(p.locator('.toast').filter({ hasText: text })).toBeVisible();
+
+  await signUp(page, `Owner ${tag}`, `owner.${tag}@example.test`);
+  await page.getByRole('button', { name: 'Create a centre' }).click();
+  await page.getByLabel('Centre name').fill(`E2E Clinic ${tag}`);
+  await page.getByLabel('City').fill('Pune');
+  await page.getByRole('button', { name: 'Create centre' }).click();
+  await expect(page.locator('.centre')).toContainText(`E2E Clinic ${tag}`);
+
+  await page.getByRole('link', { name: 'Roles' }).click();
+  await page.getByLabel('New role').fill('Shift lead');
+  await page.locator('.add-role').getByLabel('frontDesk').check();
+  await page.getByRole('button', { name: 'Add role' }).click();
+  await toast(page, 'Shift lead added');
+  await expect(page.getByLabel('Name of the shift_lead role')).toHaveValue('Shift lead');
+
+  await page.getByRole('link', { name: 'Staff' }).click();
+  const code = (await page.locator('.code-big').textContent()).trim();
+  expect(code).toMatch(/^[A-Z0-9]{8}$/);
+
+  const colleague = await (await browser.newContext()).newPage();
+  await signUp(colleague, `Joiner ${tag}`, `joiner.${tag}@example.test`);
+  await colleague.getByRole('button', { name: 'Join with a code' }).click();
+  await colleague.getByLabel('Join code').fill(code);
+  await colleague.getByRole('button', { name: 'Ask to join' }).click();
+  await toast(colleague, `Asked to join E2E Clinic ${tag}`);
+
+  // The request reaches the manager's open Staff page live.
+  await page.getByLabel(`Role for Joiner ${tag}`).selectOption({ label: 'Shift lead' });
+  await page.getByRole('button', { name: 'Approve' }).click();
+  await toast(page, `Joiner ${tag} joined`);
+
+  await colleague.reload();
+  await colleague.getByRole('button', { name: 'Open' }).click();
+  await expect(colleague.locator('.whoami')).toContainText(`Joiner ${tag}`);
+  await expect(colleague.locator('.whoami')).toContainText('Shift lead');
+  await expect(colleague.getByRole('link', { name: 'Book & walk-in' })).toBeVisible();
+  await expect(colleague.getByRole('link', { name: 'Staff' })).toHaveCount(0);
+});

@@ -59,6 +59,7 @@ beforeAll(async () => {
     city: 'Test',
     timezone: midMorningZone(),
     hours: { opens: '07:00', closes: '23:00' },
+    demo: true,
     holdTtlSeconds: 1,
     resources: Object.values(RESOURCES).map((r) => ({ ...r, kind: 'equipment' })),
     services: [

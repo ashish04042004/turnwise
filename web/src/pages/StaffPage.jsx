@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, post } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { useConfig } from '../config.jsx';
+import { useLive } from '../live.jsx';
 import { useAction } from '../toast.jsx';
 
 const validPin = (pin) => /^\d{4,8}$/.test(pin);
@@ -73,6 +74,7 @@ function StaffRow({ person, isSelf, onChanged }) {
       <td>
         <strong>{person.name}</strong>
         {isSelf && <span className="muted"> (you)</span>}
+        <div className="muted small">{person.email ?? 'PIN only'}</div>
       </td>
       <td>
         <select
@@ -88,7 +90,7 @@ function StaffRow({ person, isSelf, onChanged }) {
         <div className="staff-actions">
         {pin === null ? (
           <button className="btn btn-sm" disabled={!person.active} onClick={() => setPin('')}>
-            Reset PIN
+            {person.hasPin ? 'Reset PIN' : 'Set PIN'}
           </button>
         ) : (
           <form
@@ -136,6 +138,171 @@ function StaffRow({ person, isSelf, onChanged }) {
   );
 }
 
+function JoinRequests({ onDecided }) {
+  const run = useAction();
+  const { lastEvent } = useLive();
+  const { config } = useConfig();
+  const [requests, setRequests] = useState([]);
+  const [roles, setRoles] = useState({});
+  const load = useCallback(() => api('/join-requests').then((r) => setRequests(r.requests), () => undefined), []);
+  useEffect(() => {
+    load();
+  }, [load]);
+  useEffect(() => {
+    if (lastEvent?.type?.startsWith('join.')) load();
+  }, [lastEvent, load]);
+
+  if (requests.length === 0) return null;
+  const decide = async (r, approve) => {
+    const role = roles[r.id];
+    const done = approve
+      ? await run(() => post(`/join-requests/${r.id}/approve`, { role }), `${r.name} joined`)
+      : await run(() => post(`/join-requests/${r.id}/reject`), `${r.name}'s request declined`);
+    if (done) {
+      load();
+      onDecided();
+    }
+  };
+
+  return (
+    <section className="panel">
+      <div className="panel-head">
+        <h2>Asking to join</h2>
+        <span className="muted">They used this centre’s join code.</span>
+      </div>
+      <ul className="join-requests">
+        {requests.map((r) => (
+          <li key={r.id}>
+            <span>
+              <strong>{r.name}</strong> <span className="muted">{r.email}</span>
+              {r.message && <span className="small"> — “{r.message}”</span>}
+            </span>
+            <select aria-label={`Role for ${r.name}`} value={roles[r.id] ?? ''} onChange={(e) => setRoles({ ...roles, [r.id]: e.target.value })}>
+              <option value="" disabled>
+                Role…
+              </option>
+              {(config?.roles ?? []).map((role) => (
+                <option key={role.code} value={role.code}>
+                  {role.label}
+                </option>
+              ))}
+            </select>
+            <button type="button" className="btn btn-sm btn-primary" disabled={!roles[r.id]} onClick={() => decide(r, true)}>
+              Approve
+            </button>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => decide(r, false)}>
+              Decline
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function JoinCode() {
+  const run = useAction();
+  const [state, setState] = useState(null);
+  useEffect(() => {
+    api('/centre/join-code').then(setState, () => undefined);
+  }, []);
+  if (!state) return null;
+  if (state.demo) {
+    return <p className="muted small">This is a demo centre, rebuilt every day, so it doesn’t take join requests. Create your own centre from your account to invite colleagues.</p>;
+  }
+  const change = async (enabled) => {
+    const next = await run(() => api('/centre/join-code', { method: enabled ? 'POST' : 'DELETE' }), enabled ? 'New join code issued; the old one stops working' : 'Join code turned off');
+    if (next) setState(next);
+  };
+  return (
+    <div className="join-code">
+      {state.code ? (
+        <>
+          <span>
+            Join code <code className="code-big">{state.code}</code>
+          </span>
+          <button type="button" className="btn btn-sm" onClick={() => navigator.clipboard?.writeText(state.code)}>
+            Copy
+          </button>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => change(true)}>
+            New code
+          </button>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => change(false)}>
+            Turn off
+          </button>
+          <span className="muted small">Colleagues create an account, enter this code, and you approve them here.</span>
+        </>
+      ) : (
+        <>
+          <span className="muted">Not taking join requests.</span>
+          <button type="button" className="btn btn-sm" onClick={() => change(true)}>
+            Issue a join code
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Terminals() {
+  const run = useAction();
+  const [state, setState] = useState(null);
+  const [name, setName] = useState('');
+  const load = useCallback(() => api('/terminals').then(setState, () => undefined), []);
+  useEffect(() => {
+    load();
+  }, [load]);
+  if (!state) return null;
+
+  const enrol = async (e) => {
+    e.preventDefault();
+    if (await run(() => post('/terminals', { name: name.trim() }), `This device is now the shared terminal "${name.trim()}"`)) {
+      setName('');
+      load();
+    }
+  };
+  const revoke = async (t) => {
+    if (!window.confirm(`Stop PIN sign-in on "${t.name}"?`)) return;
+    if (await run(() => api(`/terminals/${t.id}`, { method: 'DELETE' }), `${t.name} revoked`)) load();
+  };
+
+  return (
+    <section className="panel">
+      <div className="panel-head">
+        <h2>Shared terminals</h2>
+        <span className="muted">Devices where colleagues switch with a PIN instead of their email. Everywhere else needs an account.</span>
+      </div>
+      {state.terminals.length > 0 && (
+        <ul className="terminals">
+          {state.terminals.map((t) => (
+            <li key={t.id}>
+              <span>
+                <strong>{t.name}</strong>
+                {t.id === state.thisDevice && <span className="role-chip">this device</span>}
+                <span className="muted small"> enrolled by {t.createdBy}</span>
+              </span>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => revoke(t)}>
+                Revoke
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {!state.thisDevice && (
+        <form className="form-row" onSubmit={enrol}>
+          <label>
+            Enrol this device as
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Front desk 1" />
+          </label>
+          <button className="btn" disabled={name.trim().length < 2}>
+            Enrol
+          </button>
+        </form>
+      )}
+    </section>
+  );
+}
+
 function StaffDirectory() {
   const { staff: me } = useAuth();
   const [people, setPeople] = useState(null);
@@ -155,6 +322,13 @@ function StaffDirectory() {
 
   return (
     <div className="staff-page">
+      <JoinRequests onDecided={load} />
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Invite colleagues</h2>
+        </div>
+        <JoinCode />
+      </section>
       <section className="panel">
         <div className="panel-head">
           <h2>Add a person</h2>
@@ -186,6 +360,7 @@ function StaffDirectory() {
           </table>
         )}
       </section>
+      <Terminals />
     </div>
   );
 }

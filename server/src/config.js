@@ -72,4 +72,8 @@ export const config = {
     maxFailures: num('LOGIN_MAX_FAILURES', 8),
     windowMin: num('LOGIN_WINDOW_MIN', 10),
   },
+  /** New accounts allowed per client address per hour (counted in Redis when available). */
+  signupsPerHour: num('SIGNUPS_PER_HOUR', 10),
+  /** How long an enrolled shared terminal stays enrolled before a manager must enrol it again. */
+  terminalDays: num('TERMINAL_DAYS', 365),
 };
